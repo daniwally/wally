@@ -1,9 +1,11 @@
-import { CATEGORIAS, type Pendiente } from "@/lib/mock-data";
+import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
+import type { ExpenseRow } from "@/lib/data";
 import { fmtMoney, fmtDateShort, diasHasta } from "@/lib/format";
 
-export function PendienteRow({ p }: { p: Pendiente }) {
-  const cat = CATEGORIAS[p.cat];
-  const dias = diasHasta(p.vence);
+export function PendienteRow({ e }: { e: ExpenseRow }) {
+  const catKey = (e.category_id ?? "servicios") as CategoriaKey;
+  const cat = CATEGORIAS[catKey];
+  const dias = e.due_at ? diasHasta(e.due_at) : 999;
   const urgente = dias <= 3;
 
   return (
@@ -45,10 +47,10 @@ export function PendienteRow({ p }: { p: Pendiente }) {
             textOverflow: "ellipsis",
           }}
         >
-          {p.proveedor}
+          {e.provider}
         </div>
         <div className="t-hand" style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          {p.concepto} · vence {fmtDateShort(p.vence)}
+          {e.concept} · vence {e.due_at ? fmtDateShort(e.due_at) : "—"}
           {urgente && (
             <span style={{ color: "var(--red)", fontWeight: 700 }}> · en {dias}d</span>
           )}
@@ -56,7 +58,7 @@ export function PendienteRow({ p }: { p: Pendiente }) {
       </div>
       <div style={{ textAlign: "right" }}>
         <div className="t-title" style={{ fontSize: 20, lineHeight: 1 }}>
-          {fmtMoney(p.monto, p.moneda)}
+          {fmtMoney(e.amount_cents / 100, e.currency)}
         </div>
       </div>
     </div>

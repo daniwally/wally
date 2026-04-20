@@ -1,29 +1,30 @@
-import {
-  MES_ACTUAL,
-  PENDIENTES,
-  PAGADOS_MES,
-  HISTORICO,
-  INSIGHTS,
-  CATEGORIAS,
-  TOTAL_ARS_MES,
-  PENDIENTE_ARS,
-  type CategoriaKey,
-} from "@/lib/mock-data";
+import { CATEGORIAS, HISTORICO, MES_ACTUAL, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
+import { getDashboardData } from "@/lib/data";
 import { SketchyLineChart } from "@/components/charts/SketchyLineChart";
 import { SketchyBars } from "@/components/charts/SketchyBars";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { PendienteRow } from "@/components/dashboard/PendienteRow";
 import { InsightCard } from "@/components/dashboard/InsightCard";
 
-export default function DashboardPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const { pendientes, pagados, insights, totalArsMes, pendienteArs } = await getDashboardData();
+
   const cats: Partial<Record<CategoriaKey, number>> = {};
-  PAGADOS_MES.forEach((g) => {
-    cats[g.cat] = (cats[g.cat] || 0) + g.monto;
-  });
-  PENDIENTES.filter((p) => p.moneda === "ARS").forEach((g) => {
-    cats[g.cat] = (cats[g.cat] || 0) + g.monto;
-  });
+  pagados
+    .filter((e) => e.currency === "ARS" && e.category_id)
+    .forEach((e) => {
+      const k = e.category_id as CategoriaKey;
+      cats[k] = (cats[k] || 0) + e.amount_cents / 100;
+    });
+  pendientes
+    .filter((e) => e.currency === "ARS" && e.category_id)
+    .forEach((e) => {
+      const k = e.category_id as CategoriaKey;
+      cats[k] = (cats[k] || 0) + e.amount_cents / 100;
+    });
 
   const catItems = (Object.entries(cats) as [CategoriaKey, number][])
     .map(([k, v]) => ({
@@ -34,9 +35,17 @@ export default function DashboardPage() {
     }))
     .sort((a, b) => b.value - a.value);
 
-  const maxCat = Math.max(...catItems.map((i) => i.value));
+  const maxCat = catItems.length ? Math.max(...catItems.map((i) => i.value)) : 1;
   const totalPrev = HISTORICO[5].total;
-  const delta = Math.round(((TOTAL_ARS_MES - totalPrev) / totalPrev) * 100);
+  const delta = Math.round(((totalArsMes - totalPrev) / totalPrev) * 100);
+
+  const vencenEstaSemana = pendientes.filter((e) => {
+    if (!e.due_at) return false;
+    const d = new Date(e.due_at + "T00:00");
+    const hoy = new Date("2026-04-20T00:00");
+    const diff = (d.getTime() - hoy.getTime()) / 86400000;
+    return diff >= 0 && diff <= 7 && e.currency === "ARS";
+  });
 
   return (
     <div style={{ padding: "0 4px" }}>
@@ -69,14 +78,14 @@ export default function DashboardPage() {
             Gastado en {MES_ACTUAL}
           </div>
           <div className="t-title" style={{ fontSize: 72, lineHeight: 1, marginTop: 4 }}>
-            {fmtARS(TOTAL_ARS_MES)}
+            {fmtARS(totalArsMes)}
           </div>
           <div style={{ display: "flex", gap: 18, marginTop: 12, alignItems: "center" }}>
             <span className="chip green">
               {delta < 0 ? "↓" : "↑"} {Math.abs(delta)}% vs marzo
             </span>
             <span className="t-hand" style={{ color: "var(--ink-3)" }}>
-              <span className="wiggle">Promedio diario:</span> {fmtARS(TOTAL_ARS_MES / 20)}
+              <span className="wiggle">Promedio diario:</span> {fmtARS(totalArsMes / 20)}
             </span>
           </div>
           <div style={{ position: "absolute", top: -14, right: 30 }}>
@@ -86,14 +95,14 @@ export default function DashboardPage() {
 
         <KPICard
           label="Pendiente aprobar"
-          value={fmtARS(PENDIENTE_ARS)}
-          sub={`${PENDIENTES.length} mails detectados`}
+          value={fmtARS(pendienteArs)}
+          sub={`${pendientes.length} mails detectados`}
           accent="yellow"
         />
         <KPICard
           label="Vence esta semana"
-          value="3 facturas"
-          sub={fmtARS(24580 + 11990 + 412350)}
+          value={`${vencenEstaSemana.length} facturas`}
+          sub={fmtARS(vencenEstaSemana.reduce((s, e) => s + e.amount_cents / 100, 0))}
           accent="red"
         />
         <KPICard label="Ahorro posible" value={fmtARS(8780)} sub="2 subs sin usar" accent="green" />
@@ -146,11 +155,11 @@ export default function DashboardPage() {
                 el bot te avisa por Telegram →
               </div>
             </div>
-            <span className="chip red">{PENDIENTES.length}</span>
+            <span className="chip red">{pendientes.length}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {PENDIENTES.slice(0, 5).map((p) => (
-              <PendienteRow key={p.id} p={p} />
+            {pendientes.slice(0, 5).map((e) => (
+              <PendienteRow key={e.id} e={e} />
             ))}
           </div>
         </div>
@@ -178,8 +187,8 @@ export default function DashboardPage() {
         >
           <div className="section-title">Alertas & insights</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
-            {INSIGHTS.map((ins, i) => (
-              <InsightCard key={i} ins={ins} />
+            {insights.map((ins) => (
+              <InsightCard key={ins.id} ins={ins} />
             ))}
           </div>
         </div>

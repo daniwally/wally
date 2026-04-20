@@ -1,6 +1,6 @@
-import type { Insight } from "@/lib/mock-data";
+import type { InsightRow } from "@/lib/data";
 
-export function InsightCard({ ins }: { ins: Insight }) {
+export function InsightCard({ ins }: { ins: InsightRow }) {
   const bg = {
     red: "var(--red-soft)",
     green: "var(--green-soft)",
@@ -8,7 +8,7 @@ export function InsightCard({ ins }: { ins: Insight }) {
     blue: "var(--blue-soft)",
   }[ins.color];
 
-  const icon = { alerta: "⚠", insight: "✨", recordatorio: "📅", descubierto: "🔍" }[ins.tipo];
+  const icon = { alerta: "⚠", insight: "✨", recordatorio: "📅", descubierto: "🔍" }[ins.type];
 
   return (
     <div
@@ -22,11 +22,11 @@ export function InsightCard({ ins }: { ins: Insight }) {
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14 }}>
         <span>{icon}</span>
         <span className="t-hand" style={{ fontWeight: 700 }}>
-          {ins.titulo}
+          {ins.title}
         </span>
       </div>
       <div className="t-hand" style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 4 }}>
-        {ins.detalle}
+        {ins.detail}
       </div>
     </div>
   );
