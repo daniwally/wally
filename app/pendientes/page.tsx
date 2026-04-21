@@ -9,7 +9,14 @@ import { fmtARS } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function PendientesPage() {
+type SearchParams = Promise<{ ok?: string }>;
+
+export default async function PendientesPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const { ok } = await searchParams;
   const { data: pendientes } = await supabase()
     .from("expenses")
     .select("id, provider, concept, amount_cents, currency, category_id, due_at, source_from, confidence_amount")
@@ -40,6 +47,21 @@ export default async function PendientesPage() {
       <PageHeader section="General" title="Pendientes" />
 
       <div className="v2-content">
+        {ok && (
+          <div
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              border: "1px solid var(--green)",
+              background: "var(--green-soft)",
+              color: "var(--green)",
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
+            ✓ Registrado: <strong>{decodeURIComponent(ok)}</strong>
+          </div>
+        )}
         <div className="v2-grid v2-grid-3" style={{ marginBottom: 16 }}>
           <KPI
             title="Total a aprobar"

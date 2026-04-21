@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Icon } from "./Icon";
 import { USD_RATE } from "@/lib/mock-data";
 
@@ -35,9 +36,9 @@ export function PageHeader({
             </span>
             <span className="v2-badge">USD blue · ${USD_RATE}</span>
             <div style={{ width: 1, height: 22, background: "var(--border)" }} />
-            <button className="v2-btn ghost" type="button">
-              <Icon.search />
-            </button>
+            <Link href="/nuevo" className="v2-btn primary">
+              <Icon.plus /> Nuevo gasto
+            </Link>
           </>
         )}
       </div>
