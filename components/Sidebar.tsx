@@ -27,6 +27,7 @@ export function Sidebar({ pendingCount = 0 }: { pendingCount?: number }) {
     },
     { href: "/mail", label: "Scan de Gastos", icon: <Icon.mail />, section: "general" },
     { href: "/telegram", label: "Telegram", icon: <Icon.send />, section: "general" },
+    { href: "/analisis", label: "Análisis", icon: <Icon.chart />, section: "general" },
     { href: "/admin", label: "Cuentas & Reglas", icon: <Icon.settings />, section: "config" },
   ];
 
