@@ -1,4 +1,5 @@
 import { anthropic } from "./anthropic";
+import { extractPdfText, moonshotToolCall, hasMoonshot } from "./moonshot";
 
 export type ExtractedExpense = {
   is_expense: boolean;
@@ -741,6 +742,34 @@ function pickItemsModel(fileBytes?: number): {
   return { model: "claude-haiku-4-5-20251001", maxTokens: 8000 };
 }
 
+// Intenta extraer con Kimi (Moonshot) — más barato ~10x vs Sonnet
+// Solo funciona para PDFs (usa file-extract API, no vision)
+async function tryKimi(pdfBuffer: Buffer, filename: string): Promise<StatementItem[] | null> {
+  if (!hasMoonshot()) return null;
+  try {
+    const text = await extractPdfText(pdfBuffer, filename);
+    if (!text || text.length < 100) return null;
+
+    const input = await moonshotToolCall({
+      systemPrompt: STATEMENT_ITEMS_SYSTEM,
+      userContent: `Analizá este resumen de tarjeta y extraé TODOS los consumos:\n\n${text.slice(0, 100000)}`,
+      tool: {
+        name: "record_items",
+        description: ITEMS_TOOL.description,
+        input_schema: ITEMS_TOOL.input_schema,
+      },
+      model: "moonshot-v1-128k",
+      maxTokens: 16000,
+    });
+
+    const items = (input as { items?: StatementItem[] }).items ?? [];
+    return items;
+  } catch (e) {
+    console.error("Kimi extraction failed", e);
+    return null;
+  }
+}
+
 export async function extractStatementItems(
   attachment:
     | {
@@ -753,6 +782,19 @@ export async function extractStatementItems(
       },
   fileBytes?: number,
 ): Promise<StatementItem[]> {
+  // Estrategia multi-modelo para minimizar costo:
+  // 1. Si es PDF y tenemos Moonshot → intentamos Kimi primero (más barato ~10x)
+  // 2. Si Kimi falla o devuelve vacío → auto-switch Haiku/Sonnet de Claude
+  // 3. Si es imagen → siempre Claude (Kimi file-extract no soporta images)
+
+  if (attachment.type === "document" && hasMoonshot()) {
+    const pdfBuffer = Buffer.from(attachment.source.data, "base64");
+    const kimiItems = await tryKimi(pdfBuffer, "resumen.pdf");
+    if (kimiItems && kimiItems.length > 0) {
+      return kimiItems;
+    }
+    // Si Kimi no detectó nada, cae a Claude
+  }
   const { model, maxTokens } = pickItemsModel(fileBytes);
 
   async function call(chosenModel: typeof model, chosenMaxTokens: number) {
