@@ -84,12 +84,64 @@ export async function getInsights(limit = 4) {
   return (data ?? []) as InsightRow[];
 }
 
+export type HistPoint = { mes: string; total: number; prom: number; parcial?: boolean };
+
+const MES_ES_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+export async function getHistorico(monthsBack = 7): Promise<HistPoint[]> {
+  const now = new Date();
+  const fromDate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (monthsBack - 1), 1),
+  );
+
+  const { data, error } = await supabase()
+    .from("expenses")
+    .select("amount_cents, currency, paid_at")
+    .eq("user_id", WALLY_USER_ID)
+    .in("status", ["paid", "auto_approved"])
+    .eq("currency", "ARS")
+    .gte("paid_at", fromDate.toISOString())
+    .not("paid_at", "is", null);
+  if (error) throw error;
+
+  // Bucket por YYYY-MM
+  const byMonth = new Map<string, number>();
+  (data ?? []).forEach((e) => {
+    if (!e.paid_at) return;
+    const d = new Date(e.paid_at);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    byMonth.set(key, (byMonth.get(key) ?? 0) + e.amount_cents / 100);
+  });
+
+  const points: HistPoint[] = [];
+  let runningSum = 0;
+  let runningCount = 0;
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const total = byMonth.get(key) ?? 0;
+    const yearShort = `'${String(d.getUTCFullYear()).slice(-2)}`;
+    const label = `${MES_ES_SHORT[d.getUTCMonth()]} ${yearShort}`;
+    runningSum += total;
+    runningCount++;
+    const prom = runningSum / runningCount;
+    points.push({
+      mes: label,
+      total,
+      prom,
+      parcial: i === 0, // mes actual = parcial
+    });
+  }
+  return points;
+}
+
 export async function getDashboardData() {
-  const [categorias, pendientes, pagados, insights] = await Promise.all([
+  const [categorias, pendientes, pagados, insights, historico] = await Promise.all([
     getCategories(),
     getPendientes(),
     getPagadosMes(),
     getInsights(),
+    getHistorico(7),
   ]);
 
   const totalArsMes = pagados
@@ -102,5 +154,14 @@ export async function getDashboardData() {
 
   const catMap = new Map(categorias.map((c) => [c.id, c]));
 
-  return { categorias, catMap, pendientes, pagados, insights, totalArsMes, pendienteArs };
+  return {
+    categorias,
+    catMap,
+    pendientes,
+    pagados,
+    insights,
+    historico,
+    totalArsMes,
+    pendienteArs,
+  };
 }

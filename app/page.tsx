@@ -1,4 +1,4 @@
-import { HISTORICO, type CategoriaKey, CATEGORIAS } from "@/lib/mock-data";
+import { type CategoriaKey, CATEGORIAS } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
 import { getDashboardData } from "@/lib/data";
 import { CAT_COLOR } from "@/components/Icon";
@@ -14,7 +14,8 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const { pendientes, pagados, insights, totalArsMes, pendienteArs } = await getDashboardData();
+  const { pendientes, pagados, insights, historico, totalArsMes, pendienteArs } =
+    await getDashboardData();
 
   const cats: Partial<Record<CategoriaKey, number>> = {};
   [...pagados, ...pendientes.filter((p) => p.currency === "ARS")].forEach((e) => {
@@ -32,9 +33,12 @@ export default async function DashboardPage() {
     }))
     .sort((a, b) => b.value - a.value);
 
-  const totalPrev = HISTORICO[5].total;
-  const delta = Math.round(((totalArsMes - totalPrev) / totalPrev) * 100);
-  const deltaLabel = `${Math.abs(delta)}% vs marzo`;
+  const prevPoint = historico[historico.length - 2];
+  const totalPrev = prevPoint?.total ?? 0;
+  const delta =
+    totalPrev > 0 ? Math.round(((totalArsMes - totalPrev) / totalPrev) * 100) : null;
+  const prevLabel = prevPoint ? prevPoint.mes : "mes anterior";
+  const hasHistory = historico.some((h) => h.total > 0);
 
   const hoy = new Date().getUTCDate();
   const diasMes = 30;
@@ -86,9 +90,11 @@ export default async function DashboardPage() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span className={`v2-kpi-delta ${delta < 0 ? "down" : "up"}`}>
-                {delta < 0 ? "↓" : "↑"} {deltaLabel}
-              </span>
+              {delta !== null && (
+                <span className={`v2-kpi-delta ${delta < 0 ? "down" : "up"}`}>
+                  {delta < 0 ? "↓" : "↑"} {Math.abs(delta)}% vs {prevLabel}
+                </span>
+              )}
               <span style={{ fontSize: 12, color: "var(--text-3)" }}>
                 · prom. diario {fmtARS(totalArsMes / 20)}
               </span>
@@ -123,16 +129,25 @@ export default async function DashboardPage() {
               <div>
                 <div className="v2-card-title">Evolución</div>
                 <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
-                  Últimos 7 meses
+                  Últimos 7 meses · solo gastos pagados
                 </div>
               </div>
-              <div className="v2-seg">
-                <button>1M</button>
-                <button className="active">7M</button>
-                <button>1A</button>
-              </div>
             </div>
-            <LineChart data={HISTORICO} />
+            {hasHistory ? (
+              <LineChart data={historico} />
+            ) : (
+              <div
+                style={{
+                  padding: "40px 20px",
+                  textAlign: "center",
+                  color: "var(--text-3)",
+                  fontSize: 13,
+                }}
+              >
+                Todavía no hay historial. A medida que apruebes gastos como pagados, va a
+                aparecer la evolución mes a mes acá.
+              </div>
+            )}
           </div>
 
           <div className="v2-card" style={{ padding: 0, display: "flex", flexDirection: "column" }}>
