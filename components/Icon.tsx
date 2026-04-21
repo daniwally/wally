@@ -89,6 +89,14 @@ export const Icon = {
       <path d="M10 11v6M14 11v6" />
     </>,
   ),
+  refresh: make(
+    <>
+      <path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16" />
+      <path d="M8 16H3v5" />
+    </>,
+  ),
 };
 
 export type IconName = keyof typeof Icon;

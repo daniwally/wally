@@ -12,6 +12,7 @@ import {
   revertExpense,
   deleteExpense,
 } from "../actions";
+import { triggerScan } from "../admin/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -95,7 +96,19 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
                 flexWrap: "wrap",
               }}
             >
-              <div className="v2-card-title">Scan de Gastos</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div className="v2-card-title">Scan de Gastos</div>
+                <form action={triggerScan}>
+                  <button
+                    type="submit"
+                    className="v2-btn sm ghost"
+                    title="Escanear inbox ahora"
+                    style={{ padding: "4px 6px" }}
+                  >
+                    <Icon.refresh />
+                  </button>
+                </form>
+              </div>
               <div className="v2-seg">
                 {FILTERS.map((f) => (
                   <Link
