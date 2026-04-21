@@ -8,10 +8,12 @@ import { CAT_COLOR, Icon } from "@/components/Icon";
 import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
 import { analyzeStatement, deleteAllStatements } from "../actions";
 import { BatchSelector } from "@/components/v2/BatchSelector";
+import { MerchantTypeGrid } from "@/components/v2/MerchantTypeGrid";
 
 export const dynamic = "force-dynamic";
 
 type ItemRow = {
+  id: string;
   merchant: string;
   amount_cents: number;
   currency: string;
@@ -38,7 +40,7 @@ export default async function AnalisisPage({
   const { data: itemsData } = await supabase()
     .from("statement_items")
     .select(
-      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, merchant_type, is_essential, upload_batch_id, source_provider, source_period",
+      "id, merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, merchant_type, is_essential, upload_batch_id, source_provider, source_period",
     )
     .eq("user_id", WALLY_USER_ID)
     .order("amount_cents", { ascending: false });
@@ -381,73 +383,11 @@ export default async function AnalisisPage({
                 </div>
                 <span className="v2-badge">{merchTypeItems.length} tipos</span>
               </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-                  gap: 10,
-                }}
-              >
-                {merchTypeItems.map((mt) => {
-                  const pct = totalArs > 0 ? (mt.total / totalArs) * 100 : 0;
-                  return (
-                    <div
-                      key={mt.key}
-                      style={{
-                        padding: "12px 14px",
-                        border: "1px solid var(--border)",
-                        borderRadius: 10,
-                        background: "var(--surface)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 4,
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 15 }}>{mt.icon}</span>
-                          <span style={{ fontSize: 13, fontWeight: 500 }}>{mt.label}</span>
-                        </div>
-                        <span style={{ fontSize: 11, color: "var(--text-3)" }}>
-                          {mt.count} {mt.count === 1 ? "item" : "items"}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 500,
-                          fontVariantNumeric: "tabular-nums",
-                          marginBottom: 4,
-                        }}
-                      >
-                        {fmtARS(mt.total)}
-                      </div>
-                      <div className="v2-progress">
-                        <div
-                          style={{
-                            width: `${pct}%`,
-                            background: "var(--accent)",
-                          }}
-                        />
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "var(--text-3)",
-                          marginTop: 2,
-                          textAlign: "right",
-                        }}
-                      >
-                        {pct.toFixed(1)}% del total
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <MerchantTypeGrid
+                aggregates={merchTypeItems}
+                items={itemsArs}
+                totalArs={totalArs}
+              />
             </div>
 
             <div className="v2-grid v2-grid-2-asym" style={{ marginBottom: 16 }}>
