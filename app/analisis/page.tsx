@@ -9,6 +9,7 @@ import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
 import { analyzeStatement, deleteAllStatements } from "../actions";
 import { BatchSelector } from "@/components/v2/BatchSelector";
 import { MerchantTypeGrid } from "@/components/v2/MerchantTypeGrid";
+import { MerchantReclassifier } from "@/components/v2/MerchantReclassifier";
 
 export const dynamic = "force-dynamic";
 
@@ -618,6 +619,9 @@ export default async function AnalisisPage({
                 </table>
               </div>
             )}
+
+            {/* Reclasificador de merchants (aprende para futuros scans) */}
+            <MerchantReclassifier items={items} />
 
             {/* Resúmenes analizados — al final del todo para tener el análisis arriba y la gestión abajo */}
             <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>

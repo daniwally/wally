@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { fmtARS } from "@/lib/format";
 import { Icon } from "../Icon";
-import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
-import { reclassifyMerchant } from "@/app/actions";
 
 export type MerchantTypeAgg = {
   key: string;
@@ -49,30 +47,6 @@ export function MerchantTypeGrid({
     : [];
 
   const expandedAgg = expandedKey ? aggregates.find((a) => a.key === expandedKey) : null;
-
-  // Agrupar items expandidos por merchant
-  const merchantGroups = useMemo(() => {
-    if (!expandedKey) return [];
-    const map = new Map<string, MerchantTypeItem[]>();
-    expandedItems.forEach((it) => {
-      const existing = map.get(it.merchant) ?? [];
-      existing.push(it);
-      map.set(it.merchant, existing);
-    });
-    return Array.from(map.entries())
-      .map(([merchant, its]) => ({
-        merchant,
-        items: its,
-        total: its.reduce((s, i) => s + i.amount_cents / 100, 0),
-        count: its.length,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, [expandedItems, expandedKey]);
-
-  const merchantTypeOptions = Object.entries(MERCHANT_TYPE_META).map(([k, v]) => ({
-    value: k,
-    label: `${v.icon} ${v.label}`,
-  }));
 
   return (
     <div
@@ -210,141 +184,74 @@ export function MerchantTypeGrid({
                   </button>
                 </div>
 
-                <div style={{ maxHeight: 500, overflow: "auto" }}>
-                  {merchantGroups.map((mg) => (
-                    <div
-                      key={mg.merchant}
-                      style={{ borderBottom: "1px solid var(--border)" }}
-                    >
-                      <div
-                        style={{
-                          padding: "10px 14px",
-                          background: "var(--surface-2)",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: 10,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div>
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>{mg.merchant}</span>
-                          <span
+                <div style={{ maxHeight: 400, overflow: "auto" }}>
+                  <table className="v2-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ fontSize: 10 }}>Merchant</th>
+                        <th style={{ fontSize: 10 }}>Fecha</th>
+                        <th style={{ fontSize: 10 }}>Resumen</th>
+                        <th style={{ textAlign: "right", fontSize: 10 }}>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expandedItems.map((it) => (
+                        <tr key={it.id}>
+                          <td>
+                            <div style={{ fontSize: 12, fontWeight: 500 }}>{it.merchant}</div>
+                            {it.cuota_numero && it.cuota_total && (
+                              <div style={{ fontSize: 10, color: "var(--text-3)" }}>
+                                cuota {it.cuota_numero}/{it.cuota_total}
+                              </div>
+                            )}
+                          </td>
+                          <td
                             style={{
                               fontSize: 11,
                               color: "var(--text-3)",
-                              marginLeft: 8,
+                              fontFamily: "var(--mono)",
+                              whiteSpace: "nowrap",
                             }}
                           >
-                            {mg.count} {mg.count === 1 ? "item" : "items"} ·{" "}
-                            <span
-                              style={{
-                                fontVariantNumeric: "tabular-nums",
-                                fontWeight: 500,
-                                color: "var(--text)",
-                              }}
-                            >
-                              {fmtARS(mg.total)}
-                            </span>
-                          </span>
-                        </div>
-                        <form
-                          action={reclassifyMerchant}
-                          style={{ display: "flex", gap: 6, alignItems: "center" }}
-                        >
-                          <input type="hidden" name="merchant" value={mg.merchant} />
-                          <span style={{ fontSize: 11, color: "var(--text-3)" }}>
-                            Reclasificar →
-                          </span>
-                          <select
-                            name="merchant_type"
-                            defaultValue={expandedKey ?? "otros"}
-                            className="v2-select"
+                            {it.purchase_date
+                              ? new Date(it.purchase_date + "T00:00").toLocaleDateString(
+                                  "es-AR",
+                                  { day: "2-digit", month: "2-digit" },
+                                )
+                              : "—"}
+                          </td>
+                          <td
                             style={{
-                              fontSize: 12,
-                              padding: "3px 8px",
-                              width: "auto",
-                              minWidth: 160,
+                              fontSize: 11,
+                              color: "var(--text-3)",
                             }}
                           >
-                            {merchantTypeOptions.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="submit"
-                            className="v2-btn sm"
-                            style={{ padding: "3px 8px" }}
-                            title="Aplicar tipo a todos los items de este merchant (y recordar para el futuro)"
-                          >
-                            ✓
-                          </button>
-                        </form>
-                      </div>
-                      <table className="v2-table" style={{ fontSize: 12 }}>
-                        <tbody>
-                          {mg.items.map((it) => (
-                            <tr key={it.id}>
-                              <td style={{ paddingLeft: 28, width: "50%" }}>
-                                {it.cuota_numero && it.cuota_total ? (
-                                  <span style={{ fontSize: 10, color: "var(--text-3)" }}>
-                                    cuota {it.cuota_numero}/{it.cuota_total}
-                                  </span>
-                                ) : (
-                                  <span style={{ fontSize: 10, color: "var(--text-4)" }}>·</span>
-                                )}
-                              </td>
-                              <td
+                            {it.source_provider ?? "—"}{" "}
+                            {it.source_period && (
+                              <span
                                 style={{
-                                  fontSize: 11,
-                                  color: "var(--text-3)",
                                   fontFamily: "var(--mono)",
-                                  whiteSpace: "nowrap",
+                                  color: "var(--text-4)",
                                 }}
                               >
-                                {it.purchase_date
-                                  ? new Date(it.purchase_date + "T00:00").toLocaleDateString(
-                                      "es-AR",
-                                      { day: "2-digit", month: "2-digit" },
-                                    )
-                                  : "—"}
-                              </td>
-                              <td
-                                style={{
-                                  fontSize: 11,
-                                  color: "var(--text-3)",
-                                }}
-                              >
-                                {it.source_provider ?? "—"}{" "}
-                                {it.source_period && (
-                                  <span
-                                    style={{
-                                      fontFamily: "var(--mono)",
-                                      color: "var(--text-4)",
-                                    }}
-                                  >
-                                    ({it.source_period})
-                                  </span>
-                                )}
-                              </td>
-                              <td
-                                style={{
-                                  textAlign: "right",
-                                  fontSize: 12,
-                                  fontVariantNumeric: "tabular-nums",
-                                  fontWeight: 500,
-                                }}
-                              >
-                                ${Math.round(it.amount_cents / 100).toLocaleString("es-AR")}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ))}
+                                ({it.source_period})
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontSize: 12,
+                              fontVariantNumeric: "tabular-nums",
+                              fontWeight: 500,
+                            }}
+                          >
+                            ${Math.round(it.amount_cents / 100).toLocaleString("es-AR")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
