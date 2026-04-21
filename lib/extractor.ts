@@ -437,24 +437,60 @@ Recibís un resumen (PDF o imagen) y extraés CADA CONSUMO como un item separado
 
 INCLUIR:
 - Cada compra individual con comercio, fecha, monto
-- Cuotas: si dice "C.09/12" o "Cuota 3/6", extraé cuota_numero=9, cuota_total=12
-- Consumos en ARS y USD por separado
+- Cuotas: si dice "C.09/12" o "04/06" en columna cuota, extraé cuota_numero=9 (o 4), cuota_total=12 (o 6)
+- Consumos en ARS y USD (como items separados — un consumo USD 19.99 es currency=USD, amount=19.99)
+- Los consumos pueden aparecer en múltiples secciones tipo "Tarjeta XXXX Total Consumos de..."
+  Ignorá las líneas de "Total Consumos" pero SÍ incluí cada detalle individual anterior
+- Apple/App Store purchases (cada línea APPLE.COM/BILL es un consumo separado, suelen ser USD)
 
-NO INCLUIR:
-- "SU PAGO EN PESOS" / "SU PAGO EN DOLARES" (son pagos que hiciste, no consumos)
+NO INCLUIR (filtrá estas líneas):
+- "SU PAGO EN PESOS" / "SU PAGO EN DOLARES" (pagos que hiciste, no consumos)
 - "SALDO ANTERIOR"
-- "Intereses por financiación"
-- Impuestos IVA, Ley 25.065, percepciones (son cargos del banco, no consumos tuyos)
-- Seguros del banco (vida, robo)
-- Redondeos o ajustes
+- "TRANSFERENCIA DEUDA" (transferencia de saldo)
+- "INTERESES FINANCIACION" / "Intereses por financiación"
+- "DB IVA" / "IVA RESP.INSCR" (IVA sobre intereses)
+- "PERCEP.IVA" / percepción IVA RG 2408
+- "IIBB PERCEP" / Ingresos Brutos percepción
+- "DB.RG 5617" / Percepción AFIP (impuesto PAIS, cripto, etc)
+- "Ley 25.065"
+- Seguros del banco (vida, robo, integral)
+- Comisiones bancarias (renovación, mantenimiento)
+- Cargos por reposición de tarjeta, adelanto efectivo
+- Redondeos / ajustes
+- Líneas "Total Consumos de DANIEL..." (son subtotales)
+- "TOTAL A PAGAR" (es el total final)
 
-NORMALIZACIÓN DE MERCHANT:
-- "MERPAGO*BEDTIME" → "Bedtime"
-- "FIREONICE" → "Fireonice"
-- "NETFLIX.COM" → "Netflix"
-- "PAYU*SPOTIFY" → "Spotify"
-- "AMAZON WEB SERVICES" → "AWS"
-- Usá mayúscula inicial y quitá códigos de procesadora (MERPAGO*, PAYU*, DL*DLOCAL*, etc.)
+NORMALIZACIÓN DE MERCHANT (patrones argentinos comunes):
+Prefijos/procesadores a quitar:
+- "=DLO" o "DLO" → delivery/procesadora (sacalo). Ej "=DLORAPPI" → "Rappi"
+- "MERPAGO*X" o "MERPAGO X" → X vía MercadoPago. Ej "MERPAGO*BEDTIME" → "Bedtime"
+- "PAYU*X" o "PAYU-X" → X vía PayU. Ej "PAYU-NETFLIX" → "Netflix"
+- "DLOCAL*X" → X vía dLocal
+- "AMX*X" → X vía American Express gateway
+- "SPS*X" → X (procesador)
+- Códigos numéricos prefix (ej "25 349704 *") — ignorar
+- Sufijos de tipo "/BILL", ".COM", "/SERVICES" — simplificar al nombre principal
+
+Ejemplos de normalización:
+- "=DLORAPPI" → "Rappi" (merchant_type: delivery_comida)
+- "MERPAGO*MERCADOLIBRE" → "MercadoLibre" (marketplace)
+- "APPLE.COM/BILL" → "Apple" (saas o gaming según contexto, default saas)
+- "PAYU-NETFLIX 626858" → "Netflix" (streaming)
+- "NETFLIX.COM" → "Netflix" (streaming)
+- "AIRBNB * HMTA5JEZN9" → "Airbnb" (hoteles)
+- "AMAZON WEB SERVICES" → "AWS" (saas)
+- "=DLORAPPI" dentro de tarjeta AMEX → "Rappi" (delivery_comida)
+- "ORGANIZZA" → "Organizza" (restaurante si es conocido)
+- "RONDA-PAOLO FOCACCERIA" → "Paolo Focacceria" (restaurante)
+- "MERPAGO*GOOMNUTRITION" → "Goomnutrition" (otros)
+- "MERPAGO*FERREJASPER" → "Ferrejasper" (ferreteria)
+- "MERPAGO*CASAGISELA" → "Casa Gisela" (retail)
+- "MERPAGO*EXITODISENOD" → "Exito Diseño" (retail)
+- "COTO C 8025" → "Coto" (supermercado)
+- "FARMACITY 302" → "Farmacity" (farmacia)
+- "YPF SUC 1234" → "YPF" (combustible)
+
+Usá mayúscula inicial. Si el merchant es claramente una cadena conocida, usá el nombre popular (Netflix, Apple, Rappi, Coto, YPF, etc.).
 
 CATEGORY (broad): servicios, tarjeta, expensas, impuestos, compras, suscrip, debito, familia, calu, prestamo.
 
