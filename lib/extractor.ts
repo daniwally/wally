@@ -192,10 +192,13 @@ CATEGORÍAS:
 
 PERIODO MENSUAL (period_month) — regla PRINCIPAL:
 
-El period_month representa **cuándo SALE la plata del usuario**, no el mes del servicio futuro.
+El period_month representa **cuándo SALE la plata del usuario**, NO el mes del servicio NI el mes del consumo.
 
-1. Resúmenes de tarjeta de crédito: el periodo = mes de los consumos (pasado).
-   Ejemplo: "Resumen Visa Febrero 2026" llegó en marzo → period_month="2026-02" (los consumos fueron en feb).
+1. Resúmenes de tarjeta de crédito: el periodo = **mes de la FECHA DE VENCIMIENTO** (fecha en que el usuario paga).
+   Ignorá el nombre del periodo del resumen ("Resumen Enero") y el rango de consumos.
+   Ejemplo: Resumen con consumos 24-dic al 22-ene, vencimiento 2-feb → period_month="2026-02" (ahí paga).
+   Ejemplo: Resumen con consumos febrero, vencimiento 1-abr → period_month="2026-04".
+   Ejemplo: Resumen Febrero con venc. 2-mar → period_month="2026-03".
 
 2. Facturas de servicios pasados (luz, gas, agua): period_month = mes de consumo cubierto.
    Ejemplo: "Factura Edenor Marzo" emitida en abril → period_month="2026-03".
