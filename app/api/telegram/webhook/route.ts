@@ -10,6 +10,7 @@ import {
 } from "@/lib/telegram";
 import { extractManualExpense, extractAttachmentExpense, type ManualExtracted } from "@/lib/extractor";
 import { downloadTelegramFile } from "@/lib/telegram";
+import { transcribeAudio } from "@/lib/whisper";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,8 @@ function lastDayOfMonthISO(yyyymm: string): string {
 
 type TgPhotoSize = { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number };
 type TgDocument = { file_id: string; file_unique_id: string; file_name?: string; mime_type?: string; file_size?: number };
+type TgVoice = { file_id: string; file_unique_id: string; duration: number; mime_type?: string; file_size?: number };
+type TgAudio = { file_id: string; file_unique_id: string; duration: number; mime_type?: string; file_size?: number; title?: string };
 
 type TgMessage = {
   message_id: number;
@@ -31,6 +34,8 @@ type TgMessage = {
   caption?: string;
   photo?: TgPhotoSize[];
   document?: TgDocument;
+  voice?: TgVoice;
+  audio?: TgAudio;
 };
 
 type TgCallbackQuery = {
@@ -70,6 +75,13 @@ export async function POST(req: Request) {
 async function handleMessage(msg: TgMessage) {
   const text = msg.text?.trim() ?? "";
   const chatId = msg.chat.id;
+
+  // Audio / Voice note → Whisper → manual expense
+  if (msg.voice || msg.audio) {
+    const audio = msg.voice ?? msg.audio!;
+    await handleAudio(chatId, audio.file_id, audio.mime_type ?? "audio/ogg");
+    return;
+  }
 
   // Foto del comprobante
   if (msg.photo && msg.photo.length > 0) {
@@ -161,14 +173,18 @@ async function handleMessage(msg: TgMessage) {
         "• /status \\- pendientes de aprobar",
         "• /start \\- reconectar",
         "",
-        "*Registrar gasto manual:*",
-        "Escribime en lenguaje normal, ej:",
-        "• _gasté 50 lucas en el super_",
-        "• _pagué $12\\.000 de nafta_",
-        "• _tengo que pagar 120k de luz el 25_",
-        "• _aws USD 40_",
+        "*Formas de registrar un gasto:*",
+        "1\\) Escribirme en lenguaje normal:",
+        "   _gasté 50 lucas en el super_",
+        "   _tengo que pagar 120k de luz el 25_",
         "",
-        "Lo paso por Claude Haiku y lo registro\\.",
+        "2\\) Mandar una foto del ticket/factura",
+        "",
+        "3\\) Mandar un PDF \\(resumen de tarjeta, factura\\)",
+        "",
+        "4\\) *Mandar un audio* 🎙 — transcribo con Whisper y proceso igual",
+        "",
+        "Todo pasa por Claude Haiku y se registra\\.",
       ].join("\n"),
       { parse_mode: "MarkdownV2" },
     );
@@ -186,6 +202,36 @@ async function handleMessage(msg: TgMessage) {
     await handleExtracted(chatId, extracted, "texto libre");
   } catch (e) {
     await sendMessage(chatId, `Error procesando: ${e instanceof Error ? e.message : "unknown"}`);
+  }
+}
+
+async function handleAudio(chatId: number, fileId: string, mimeType: string) {
+  try {
+    await sendMessage(chatId, "🎙 Transcribiendo audio\\.\\.\\.", { parse_mode: "MarkdownV2" });
+
+    const { buffer, sizeBytes } = await downloadTelegramFile(fileId);
+    const MAX_BYTES = 24 * 1024 * 1024; // Whisper limit is 25MB
+    if (sizeBytes > MAX_BYTES) {
+      await sendMessage(chatId, `Audio muy largo (${Math.round(sizeBytes / 1024 / 1024)}MB, max 24MB)`);
+      return;
+    }
+
+    const text = await transcribeAudio(buffer, mimeType);
+    if (!text) {
+      await sendMessage(chatId, "No pude transcribir el audio. Probá de nuevo.");
+      return;
+    }
+
+    await sendMessage(
+      chatId,
+      `🎙 _Transcripto:_ "${escapeMd(text)}"`,
+      { parse_mode: "MarkdownV2" },
+    );
+
+    const extracted = await extractManualExpense(text);
+    await handleExtracted(chatId, extracted, "audio");
+  } catch (e) {
+    await sendMessage(chatId, `Error en audio: ${e instanceof Error ? e.message : "unknown"}`);
   }
 }
 
