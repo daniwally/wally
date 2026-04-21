@@ -450,42 +450,6 @@ export default async function AnalisisPage({
               </div>
             </div>
 
-            {/* Resúmenes subidos */}
-            <div className="v2-card" style={{ marginBottom: 16, padding: 0 }}>
-              <div
-                style={{
-                  padding: "16px 20px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <div>
-                  <div className="v2-card-title">Resúmenes analizados ({batches.length})</div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                    🗑 borrá un batch individual o limpiá todo el análisis
-                  </div>
-                </div>
-                <form action={deleteAllStatements}>
-                  <button
-                    type="submit"
-                    className="v2-btn sm"
-                    style={{
-                      color: "var(--red)",
-                      borderColor: "var(--red-soft)",
-                      background: "var(--red-soft)",
-                    }}
-                  >
-                    <Icon.trash /> Borrar todo
-                  </button>
-                </form>
-              </div>
-              <BatchSelector batches={batches} />
-            </div>
-
             <div className="v2-grid v2-grid-2-asym" style={{ marginBottom: 16 }}>
               {/* Top merchants */}
               <div className="v2-card" style={{ padding: 0 }}>
@@ -714,6 +678,42 @@ export default async function AnalisisPage({
                 </table>
               </div>
             )}
+
+            {/* Resúmenes analizados — al final del todo para tener el análisis arriba y la gestión abajo */}
+            <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <div className="v2-card-title">Resúmenes analizados ({batches.length})</div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    seleccioná uno o varios para analizar con IA o borrarlos
+                  </div>
+                </div>
+                <form action={deleteAllStatements}>
+                  <button
+                    type="submit"
+                    className="v2-btn sm"
+                    style={{
+                      color: "var(--red)",
+                      borderColor: "var(--red-soft)",
+                      background: "var(--red-soft)",
+                    }}
+                  >
+                    <Icon.trash /> Borrar todo
+                  </button>
+                </form>
+              </div>
+              <BatchSelector batches={batches} />
+            </div>
           </>
         )}
       </div>
