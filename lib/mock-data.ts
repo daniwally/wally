@@ -9,7 +9,8 @@ export type CategoriaKey =
   | "suscrip"
   | "debito"
   | "familia"
-  | "calu";
+  | "calu"
+  | "prestamo";
 
 export const CATEGORIAS: Record<CategoriaKey, { label: string; color: string; soft: string; icon: string }> = {
   servicios: { label: "Servicios", color: "var(--blue)", soft: "var(--blue-soft)", icon: "⚡" },
@@ -21,6 +22,7 @@ export const CATEGORIAS: Record<CategoriaKey, { label: string; color: string; so
   debito:    { label: "Débito",    color: "#8c8c8c", soft: "#dcdcdc", icon: "🏦" },
   familia:   { label: "Familia",   color: "#0891b2", soft: "#ecfeff", icon: "🏠" },
   calu:      { label: "Calu",      color: "#ca8a04", soft: "#fefce8", icon: "🐾" },
+  prestamo:  { label: "Préstamos", color: "#4f46e5", soft: "#eef2ff", icon: "💵" },
 };
 
 export type Pendiente = {

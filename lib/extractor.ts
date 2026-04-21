@@ -204,6 +204,7 @@ CATEGORÍAS:
 - debito: retiro cajero, débito auto genérico
 - familia: cuotas escolares/universidad, obra social, pediatra, cumpleaños familiares, regalos a familiares, actividades de hijos, campamentos, material escolar
 - calu: gastos de la mascota Calu — veterinario, alimento mascota, accesorios, peluquería canina, guardería
+- prestamo: cuotas de préstamos personales/prendarios/hipotecarios, devoluciones a amigos por dinero prestado, pagos de créditos bancarios
 
 PERIODO MENSUAL (period_month) — regla PRINCIPAL:
 
@@ -289,6 +290,7 @@ const MANUAL_TOOL_DEFINITION = {
           "debito",
           "familia",
           "calu",
+          "prestamo",
           null,
         ],
       },

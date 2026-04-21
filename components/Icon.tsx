@@ -112,6 +112,7 @@ export const CAT_COLOR: Record<string, string> = {
   debito: "#737373",
   familia: "#0891b2",
   calu: "#ca8a04",
+  prestamo: "#4f46e5",
 };
 
 const familiaIcon = make(
@@ -132,6 +133,14 @@ const caluIcon = make(
   </>,
 );
 
+const prestamoIcon = make(
+  <>
+    <rect x="2" y="6" width="20" height="12" rx="2" />
+    <circle cx="12" cy="12" r="2" />
+    <path d="M6 12h.01M18 12h.01" />
+  </>,
+);
+
 export const CAT_ICON: Record<string, (props?: IconProps) => ReactElement> = {
   servicios: Icon.zap,
   tarjeta: Icon.card,
@@ -142,4 +151,5 @@ export const CAT_ICON: Record<string, (props?: IconProps) => ReactElement> = {
   debito: Icon.bank,
   familia: familiaIcon,
   calu: caluIcon,
+  prestamo: prestamoIcon,
 };
