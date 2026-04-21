@@ -160,9 +160,33 @@ type Expense = {
   raw_extract_json: Record<string, unknown> | null;
 };
 
-function DetailPanel({ expense }: { expense: Expense }) {
+async function DetailPanel({ expense }: { expense: Expense }) {
   const cat = (expense.category_id ?? "servicios") as CategoriaKey;
   const catInfo = CATEGORIAS[cat];
+
+  // Cargar statement items si es tarjeta
+  let statementItems: Array<{
+    id: string;
+    merchant: string;
+    merchant_raw: string | null;
+    amount_cents: number;
+    currency: string;
+    purchase_date: string | null;
+    cuota_numero: number | null;
+    cuota_total: number | null;
+    category_id: string | null;
+  }> | null = null;
+
+  if (cat === "tarjeta") {
+    const { data } = await supabase()
+      .from("statement_items")
+      .select(
+        "id, merchant, merchant_raw, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id",
+      )
+      .eq("expense_id", expense.id)
+      .order("amount_cents", { ascending: false });
+    statementItems = data ?? [];
+  }
 
   return (
     <div>
@@ -284,6 +308,121 @@ function DetailPanel({ expense }: { expense: Expense }) {
       </div>
       <ActionButtons expense={expense} />
 
+      {statementItems && statementItems.length > 0 && (
+        <>
+          <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              fontWeight: 500,
+              marginBottom: 10,
+              display: "flex",
+              justifyContent: "space-between",
+            }}
+          >
+            <span>Consumos del resumen ({statementItems.length})</span>
+            <span style={{ color: "var(--text-3)", textTransform: "none" }}>
+              total: ${Math.round(statementItems.reduce((s, it) => s + it.amount_cents / 100, 0)).toLocaleString("es-AR")}
+            </span>
+          </div>
+          <div
+            style={{
+              maxHeight: 300,
+              overflow: "auto",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+            }}
+          >
+            <table className="v2-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ fontSize: 10 }}>Merchant</th>
+                  <th style={{ fontSize: 10 }}>Fecha</th>
+                  <th style={{ textAlign: "right", fontSize: 10 }}>Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {statementItems.map((it) => (
+                  <tr key={it.id}>
+                    <td>
+                      <div style={{ fontSize: 12, fontWeight: 500 }}>{it.merchant}</div>
+                      {it.cuota_numero && it.cuota_total && (
+                        <div style={{ fontSize: 10, color: "var(--text-3)" }}>
+                          cuota {it.cuota_numero}/{it.cuota_total}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ fontSize: 11, color: "var(--text-3)", fontFamily: "var(--mono)" }}>
+                      {it.purchase_date
+                        ? new Date(it.purchase_date + "T00:00").toLocaleDateString("es-AR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                          })
+                        : "—"}
+                    </td>
+                    <td
+                      style={{
+                        textAlign: "right",
+                        fontSize: 12,
+                        fontVariantNumeric: "tabular-nums",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {it.currency === "USD" ? "US$" : "$"}
+                      {Math.round(it.amount_cents / 100).toLocaleString("es-AR")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Top 5 merchants by amount */}
+          <div style={{ marginTop: 12 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--text-3)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontWeight: 500,
+                marginBottom: 6,
+              }}
+            >
+              Top merchants
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {topMerchants(statementItems)
+                .slice(0, 5)
+                .map((m) => (
+                  <div
+                    key={m.merchant}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: 12,
+                      padding: "2px 0",
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>{m.merchant}</span>
+                    <span
+                      style={{ fontVariantNumeric: "tabular-nums", color: "var(--text-2)" }}
+                    >
+                      ${Math.round(m.total).toLocaleString("es-AR")}{" "}
+                      <span style={{ color: "var(--text-3)", fontSize: 10 }}>
+                        ({m.count})
+                      </span>
+                    </span>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </>
+      )}
+
       {expense.raw_extract_json && (
         <>
           <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
@@ -321,6 +460,25 @@ function DetailPanel({ expense }: { expense: Expense }) {
       )}
     </div>
   );
+}
+
+function topMerchants(
+  items: Array<{ merchant: string; amount_cents: number }>,
+): Array<{ merchant: string; total: number; count: number }> {
+  const map = new Map<string, { total: number; count: number }>();
+  for (const it of items) {
+    const key = it.merchant;
+    const existing = map.get(key);
+    if (existing) {
+      existing.total += it.amount_cents / 100;
+      existing.count++;
+    } else {
+      map.set(key, { total: it.amount_cents / 100, count: 1 });
+    }
+  }
+  return Array.from(map.entries())
+    .map(([merchant, v]) => ({ merchant, ...v }))
+    .sort((a, b) => b.total - a.total);
 }
 
 function ActionButtons({ expense }: { expense: Expense }) {

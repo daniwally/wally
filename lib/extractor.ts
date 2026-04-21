@@ -360,6 +360,163 @@ export async function extractAttachmentExpense(
   return toolUse.input as ManualExtracted;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Line-item extraction de resúmenes de tarjeta
+// ─────────────────────────────────────────────────────────────────
+
+export type StatementItem = {
+  merchant: string;
+  merchant_raw: string | null;
+  amount: number;
+  currency: "ARS" | "USD";
+  purchase_date: string | null;
+  cuota_numero: number | null;
+  cuota_total: number | null;
+  category: CategoriaKeyStr | null;
+};
+
+type CategoriaKeyStr =
+  | "servicios"
+  | "tarjeta"
+  | "expensas"
+  | "impuestos"
+  | "compras"
+  | "suscrip"
+  | "debito"
+  | "familia"
+  | "calu"
+  | "prestamo";
+
+const STATEMENT_ITEMS_SYSTEM = `Sos un extractor de consumos individuales de resúmenes de tarjeta de crédito argentinos.
+
+Recibís un resumen (PDF o imagen) y extraés CADA CONSUMO como un item separado.
+
+INCLUIR:
+- Cada compra individual con comercio, fecha, monto
+- Cuotas: si dice "C.09/12" o "Cuota 3/6", extraé cuota_numero=9, cuota_total=12
+- Consumos en ARS y USD por separado
+
+NO INCLUIR:
+- "SU PAGO EN PESOS" / "SU PAGO EN DOLARES" (son pagos que hiciste, no consumos)
+- "SALDO ANTERIOR"
+- "Intereses por financiación"
+- Impuestos IVA, Ley 25.065, percepciones (son cargos del banco, no consumos tuyos)
+- Seguros del banco (vida, robo)
+- Redondeos o ajustes
+
+NORMALIZACIÓN DE MERCHANT:
+- "MERPAGO*BEDTIME" → "Bedtime"
+- "FIREONICE" → "Fireonice"
+- "NETFLIX.COM" → "Netflix"
+- "PAYU*SPOTIFY" → "Spotify"
+- "AMAZON WEB SERVICES" → "AWS"
+- Usá mayúscula inicial y quitá códigos de procesadora (MERPAGO*, PAYU*, DL*DLOCAL*, etc.)
+
+CATEGORY sugerida por merchant:
+- Netflix/Spotify/Disney/HBO/AWS/SaaS → suscrip
+- Mercadolibre/Amazon/retail/marketplaces → compras
+- Supermercados/restaurantes/delivery → compras
+- Pagomiscuentas/expensas → expensas
+- Vet/petshop → calu
+- Colegios/universidad → familia
+- Sin inferencia clara → null
+
+FORMATO:
+Llamá al tool record_items con un array. Ejemplo:
+[
+  { "merchant": "Fireonice", "merchant_raw": "25 000040 * FIREONICE", "amount": 99750, "currency": "ARS", "purchase_date": "2025-07-18", "cuota_numero": 9, "cuota_total": 12, "category": "compras" },
+  { "merchant": "Bedtime", "merchant_raw": "25 349704 * MERPAGO*BEDTIME", "amount": 58298.58, "currency": "ARS", "purchase_date": "2025-08-15", "cuota_numero": 8, "cuota_total": 18, "category": "compras" }
+]
+
+Si el resumen no tiene consumos (ej saldo acreedor con 0 movimientos) → array vacío.`;
+
+const ITEMS_TOOL = {
+  name: "record_items",
+  description: "Registrar el array de consumos extraídos. Siempre llamá este tool.",
+  input_schema: {
+    type: "object" as const,
+    required: ["items"],
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          required: [
+            "merchant",
+            "merchant_raw",
+            "amount",
+            "currency",
+            "purchase_date",
+            "cuota_numero",
+            "cuota_total",
+            "category",
+          ],
+          properties: {
+            merchant: { type: "string" },
+            merchant_raw: { type: ["string", "null"] },
+            amount: { type: "number" },
+            currency: { type: "string", enum: ["ARS", "USD"] },
+            purchase_date: { type: ["string", "null"] },
+            cuota_numero: { type: ["integer", "null"] },
+            cuota_total: { type: ["integer", "null"] },
+            category: {
+              type: ["string", "null"],
+              enum: [
+                "servicios",
+                "tarjeta",
+                "expensas",
+                "impuestos",
+                "compras",
+                "suscrip",
+                "debito",
+                "familia",
+                "calu",
+                "prestamo",
+                null,
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+export async function extractStatementItems(
+  attachment:
+    | {
+        type: "image";
+        source: { type: "base64"; media_type: ImageMediaType; data: string };
+      }
+    | {
+        type: "document";
+        source: { type: "base64"; media_type: "application/pdf"; data: string };
+      },
+): Promise<StatementItem[]> {
+  const response = await anthropic().messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 4000,
+    system: [
+      { type: "text", text: STATEMENT_ITEMS_SYSTEM, cache_control: { type: "ephemeral" } },
+    ],
+    tools: [ITEMS_TOOL],
+    tool_choice: { type: "tool", name: "record_items" },
+    messages: [
+      {
+        role: "user",
+        content: [attachment, { type: "text", text: "Extraé todos los consumos del resumen." }],
+      },
+    ],
+  });
+
+  const toolUse = response.content.find((c) => c.type === "tool_use");
+  if (!toolUse || toolUse.type !== "tool_use") {
+    throw new Error("Claude did not call record_items");
+  }
+  const input = toolUse.input as { items: StatementItem[] };
+  return input.items ?? [];
+}
+
 export async function extractManualExpense(text: string): Promise<ManualExtracted> {
   const response = await anthropic().messages.create({
     model: "claude-haiku-4-5-20251001",

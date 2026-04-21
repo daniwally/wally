@@ -8,7 +8,13 @@ import {
   fmtARSForTg,
   fmtUSDForTg,
 } from "@/lib/telegram";
-import { extractManualExpense, extractAttachmentExpense, type ManualExtracted } from "@/lib/extractor";
+import {
+  extractManualExpense,
+  extractAttachmentExpense,
+  extractStatementItems,
+  type ManualExtracted,
+  type StatementItem,
+} from "@/lib/extractor";
 import { downloadTelegramFile } from "@/lib/telegram";
 import { transcribeAudio } from "@/lib/whisper";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
@@ -236,6 +242,23 @@ async function handleAudio(chatId: number, fileId: string, mimeType: string) {
   }
 }
 
+async function saveStatementItemsTg(expenseId: string, items: StatementItem[]) {
+  if (!items.length) return;
+  const rows = items.map((it) => ({
+    expense_id: expenseId,
+    user_id: WALLY_USER_ID,
+    merchant: it.merchant,
+    merchant_raw: it.merchant_raw,
+    amount_cents: Math.round(it.amount * 100),
+    currency: it.currency,
+    purchase_date: it.purchase_date,
+    cuota_numero: it.cuota_numero,
+    cuota_total: it.cuota_total,
+    category_id: it.category,
+  }));
+  await supabase().from("statement_items").insert(rows);
+}
+
 async function handleAttachment(
   chatId: number,
   fileId: string,
@@ -259,28 +282,25 @@ async function handleAttachment(
     const base64 = buffer.toString("base64");
     const effectiveMime = mimeType !== "application/octet-stream" ? mimeType : mimeHint;
 
-    let extracted;
+    type Att =
+      | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+      | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
+    let attachment: Att;
     if (effectiveMime === "application/pdf") {
-      extracted = await extractAttachmentExpense(
-        {
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: base64 },
-        },
-        caption,
-      );
+      attachment = {
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: base64 },
+      };
     } else if (
       effectiveMime === "image/jpeg" ||
       effectiveMime === "image/png" ||
       effectiveMime === "image/gif" ||
       effectiveMime === "image/webp"
     ) {
-      extracted = await extractAttachmentExpense(
-        {
-          type: "image",
-          source: { type: "base64", media_type: effectiveMime, data: base64 },
-        },
-        caption,
-      );
+      attachment = {
+        type: "image",
+        source: { type: "base64", media_type: effectiveMime, data: base64 },
+      };
     } else {
       await sendMessage(chatId, `Tipo no soportado: ${escapeMd(effectiveMime)}`, {
         parse_mode: "MarkdownV2",
@@ -288,7 +308,28 @@ async function handleAttachment(
       return;
     }
 
-    await handleExtracted(chatId, extracted, effectiveMime === "application/pdf" ? "PDF" : "foto");
+    const extracted = await extractAttachmentExpense(attachment, caption);
+    const expenseId = await handleExtracted(
+      chatId,
+      extracted,
+      effectiveMime === "application/pdf" ? "PDF" : "foto",
+    );
+
+    // Si fue una tarjeta y se insertó, extraer line items
+    if (expenseId && extracted.category === "tarjeta") {
+      try {
+        const items = await extractStatementItems(attachment);
+        if (items.length > 0) {
+          await saveStatementItemsTg(expenseId, items);
+          await sendMessage(
+            chatId,
+            `📊 Analicé ${items.length} consumos del resumen`,
+          );
+        }
+      } catch (e) {
+        console.error("items extraction error", e);
+      }
+    }
   } catch (e) {
     await sendMessage(chatId, `Error procesando: ${e instanceof Error ? e.message : "unknown"}`);
   }
@@ -298,14 +339,14 @@ async function handleExtracted(
   chatId: number,
   extracted: ManualExtracted,
   source: string,
-) {
+): Promise<string | null> {
   if (!extracted.is_expense || !extracted.amount || !extracted.provider) {
     await sendMessage(
       chatId,
       `No pude detectar un gasto${extracted.reason ? ": " + escapeMd(extracted.reason) : ""}`,
       { parse_mode: "MarkdownV2" },
     );
-    return;
+    return null;
   }
 
   const amountCents = Math.round(extracted.amount * 100);
@@ -357,7 +398,7 @@ async function handleExtracted(
 
   if (insertErr || !inserted) {
     await sendMessage(chatId, `Error guardando: ${insertErr?.message ?? "?"}`);
-    return;
+    return null;
   }
 
   const cat = ((finalCategory ?? "servicios") as CategoriaKey);
@@ -382,6 +423,8 @@ async function handleExtracted(
     parse_mode: "MarkdownV2",
     inline_keyboard: [[{ text: "🗑 Borrar", callback_data: `delete:${inserted.id}` }]],
   });
+
+  return inserted.id;
 }
 
 async function handleCallback(cb: TgCallbackQuery) {

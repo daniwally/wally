@@ -6,7 +6,9 @@ import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import {
   extractManualExpense,
   extractAttachmentExpense,
+  extractStatementItems,
   type ManualExtracted,
+  type StatementItem,
 } from "@/lib/extractor";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { getSenderKey, applyLearnedCategory } from "@/lib/category-learning";
@@ -65,6 +67,24 @@ export async function ignoreExpense(formData: FormData) {
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
+async function saveStatementItems(expenseId: string, items: StatementItem[]) {
+  if (!items.length) return;
+  const rows = items.map((it) => ({
+    expense_id: expenseId,
+    user_id: WALLY_USER_ID,
+    merchant: it.merchant,
+    merchant_raw: it.merchant_raw,
+    amount_cents: Math.round(it.amount * 100),
+    currency: it.currency,
+    purchase_date: it.purchase_date,
+    cuota_numero: it.cuota_numero,
+    cuota_total: it.cuota_total,
+    category_id: it.category,
+  }));
+  const { error } = await supabase().from("statement_items").insert(rows);
+  if (error) throw error;
+}
+
 function lastDayOfMonthISO(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -84,6 +104,10 @@ export async function createManualExpense(formData: FormData): Promise<void> {
 
   let extracted: ManualExtracted;
   let source = "web";
+  let attachment:
+    | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+    | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } }
+    | null = null;
 
   try {
     if (hasFile) {
@@ -96,13 +120,11 @@ export async function createManualExpense(formData: FormData): Promise<void> {
 
       if (mime === "application/pdf") {
         source = "web PDF";
-        extracted = await extractAttachmentExpense(
-          {
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: base64 },
-          },
-          text || undefined,
-        );
+        attachment = {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: base64 },
+        };
+        extracted = await extractAttachmentExpense(attachment, text || undefined);
       } else if (
         mime === "image/jpeg" ||
         mime === "image/png" ||
@@ -110,13 +132,11 @@ export async function createManualExpense(formData: FormData): Promise<void> {
         mime === "image/webp"
       ) {
         source = "web foto";
-        extracted = await extractAttachmentExpense(
-          {
-            type: "image",
-            source: { type: "base64", media_type: mime, data: base64 },
-          },
-          text || undefined,
-        );
+        attachment = {
+          type: "image",
+          source: { type: "base64", media_type: mime, data: base64 },
+        };
+        extracted = await extractAttachmentExpense(attachment, text || undefined);
       } else {
         insertErrorRedirect(`Tipo no soportado: ${mime}`);
       }
@@ -162,7 +182,7 @@ export async function createManualExpense(formData: FormData): Promise<void> {
     insertErrorRedirect(`categoría inválida: ${category}`);
   }
 
-  const { error: insertErr } = await supabase()
+  const { data: insertedExpense, error: insertErr } = await supabase()
     .from("expenses")
     .insert({
       user_id: WALLY_USER_ID,
@@ -180,9 +200,22 @@ export async function createManualExpense(formData: FormData): Promise<void> {
       confidence_amount: 100,
       confidence_due: extracted!.due_date ? 90 : null,
       raw_extract_json: extracted!,
-    });
+    })
+    .select("id")
+    .single();
 
-  if (insertErr) insertErrorRedirect(insertErr.message);
+  if (insertErr || !insertedExpense) insertErrorRedirect(insertErr?.message ?? "insert error");
+
+  // Si es resumen de tarjeta con archivo, extraer line items en segundo plano
+  if (category === "tarjeta" && attachment) {
+    try {
+      const items = await extractStatementItems(attachment);
+      await saveStatementItems(insertedExpense.id, items);
+    } catch (e) {
+      console.error("items extraction error", e);
+      // No bloqueamos el flujo si falla
+    }
+  }
 
   revalidatePath("/");
   revalidatePath("/pendientes");
