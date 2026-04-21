@@ -340,6 +340,147 @@ export async function deleteAllStatements() {
   revalidatePath("/analisis");
 }
 
+export async function deleteMultipleBatches(formData: FormData): Promise<void> {
+  const batchIds = formData.getAll("batch_ids").map(String).filter(Boolean);
+  if (batchIds.length === 0) return;
+  await supabase()
+    .from("statement_items")
+    .delete()
+    .in("upload_batch_id", batchIds)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/analisis");
+}
+
+// Análisis narrativo de Claude sobre batches seleccionados
+export async function analyzeBatchesAI(formData: FormData): Promise<string> {
+  const batchIds = formData.getAll("batch_ids").map(String).filter(Boolean);
+  if (batchIds.length === 0) return "Seleccioná al menos un resumen.";
+
+  const { data: items } = await supabase()
+    .from("statement_items")
+    .select(
+      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, merchant_type, is_essential, source_provider, source_period",
+    )
+    .eq("user_id", WALLY_USER_ID)
+    .in("upload_batch_id", batchIds);
+
+  if (!items || items.length === 0) return "No hay items para analizar.";
+
+  // Preparar resumen estructurado para Claude
+  const itemsArs = items.filter((i) => i.currency === "ARS");
+  const totalArs = itemsArs.reduce((s, i) => s + i.amount_cents / 100, 0);
+  const itemsUsd = items.filter((i) => i.currency === "USD");
+  const totalUsd = itemsUsd.reduce((s, i) => s + i.amount_cents / 100, 0);
+
+  // Top merchants
+  const merchantMap = new Map<string, { total: number; count: number; type: string | null }>();
+  itemsArs.forEach((it) => {
+    const existing = merchantMap.get(it.merchant);
+    if (existing) {
+      existing.total += it.amount_cents / 100;
+      existing.count++;
+    } else {
+      merchantMap.set(it.merchant, {
+        total: it.amount_cents / 100,
+        count: 1,
+        type: it.merchant_type,
+      });
+    }
+  });
+  const topMerchants = Array.from(merchantMap.entries())
+    .map(([m, v]) => ({ merchant: m, ...v }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 20);
+
+  // Por tipo
+  const typeMap = new Map<string, number>();
+  itemsArs.forEach((it) => {
+    const k = it.merchant_type ?? "otros";
+    typeMap.set(k, (typeMap.get(k) ?? 0) + it.amount_cents / 100);
+  });
+  const typeBreakdown = Array.from(typeMap.entries())
+    .map(([t, v]) => ({ type: t, total: v, pct: (v / totalArs) * 100 }))
+    .sort((a, b) => b.total - a.total);
+
+  // Essential vs discretionary
+  const essentialTotal = itemsArs
+    .filter((i) => i.is_essential === true)
+    .reduce((s, i) => s + i.amount_cents / 100, 0);
+  const discretionaryTotal = itemsArs
+    .filter((i) => i.is_essential === false)
+    .reduce((s, i) => s + i.amount_cents / 100, 0);
+
+  // Cuotas activas
+  const cuotas = itemsArs.filter(
+    (i) => i.cuota_numero && i.cuota_total && i.cuota_numero < i.cuota_total,
+  );
+  const cuotasPendientes = cuotas.reduce(
+    (s, c) => s + (c.amount_cents / 100) * (c.cuota_total! - c.cuota_numero!),
+    0,
+  );
+
+  // Batches info
+  const batches = new Map<string, { provider: string; period: string | null; items: number }>();
+  items.forEach((it) => {
+    const key = `${it.source_provider}__${it.source_period}`;
+    const existing = batches.get(key);
+    if (existing) existing.items++;
+    else
+      batches.set(key, {
+        provider: it.source_provider ?? "Resumen",
+        period: it.source_period,
+        items: 1,
+      });
+  });
+
+  const prompt = `Sos un analista financiero experto en finanzas personales de Argentina. Analizá los siguientes datos extraídos de ${batches.size} resúmenes de tarjeta de crédito y armá un **resumen profesional y conciso** (máximo 6-8 párrafos cortos) con:
+
+1. **Panorama general**: total gastado, periodo cubierto, cantidad de consumos
+2. **Dónde se va la plata**: top 3-5 categorías/merchants con %
+3. **Alertas rojas**: gastos que llaman la atención (anomalías, grandes compras, acumulación en alguna categoría)
+4. **Patrones**: recurrentes detectados, comportamiento de consumo
+5. **Cuotas activas**: impacto en flujo futuro
+6. **Recomendaciones accionables** específicas (no genéricas tipo "ahorrá más")
+
+Tono: directo, argentino, profesional pero no aburrido. Usá emojis moderados. Formato markdown liviano.
+
+DATOS:
+Resúmenes analizados: ${batches.size}
+${Array.from(batches.values())
+  .map((b) => `- ${b.provider} (${b.period ?? "sin período"}): ${b.items} items`)
+  .join("\n")}
+
+Total ARS: $${totalArs.toLocaleString("es-AR")}
+Total USD: US$${totalUsd.toFixed(2)}
+Consumos totales: ${items.length}
+
+Esencial: $${essentialTotal.toLocaleString("es-AR")} (${Math.round((essentialTotal / totalArs) * 100)}%)
+Discrecional: $${discretionaryTotal.toLocaleString("es-AR")} (${Math.round((discretionaryTotal / totalArs) * 100)}%)
+
+Top merchants (ARS):
+${topMerchants.map((m) => `- ${m.merchant} (${m.type}): $${m.total.toLocaleString("es-AR")} en ${m.count} items`).join("\n")}
+
+Desglose por tipo (ARS):
+${typeBreakdown.map((t) => `- ${t.type}: $${t.total.toLocaleString("es-AR")} (${t.pct.toFixed(1)}%)`).join("\n")}
+
+Cuotas activas: ${cuotas.length} items, pendiente total: $${cuotasPendientes.toLocaleString("es-AR")}
+`;
+
+  const { anthropic: anthropicClient } = await import("@/lib/anthropic");
+  const response = await anthropicClient().messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2500,
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const text = response.content
+    .filter((c) => c.type === "text")
+    .map((c) => (c.type === "text" ? c.text : ""))
+    .join("\n");
+
+  return text || "No pude generar análisis.";
+}
+
 export async function revertExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) return;

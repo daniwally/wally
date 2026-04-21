@@ -6,7 +6,8 @@ import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
 import { CAT_COLOR, Icon } from "@/components/Icon";
 import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
-import { analyzeStatement, deleteStatementBatch, deleteAllStatements } from "../actions";
+import { analyzeStatement, deleteAllStatements } from "../actions";
+import { BatchSelector } from "@/components/v2/BatchSelector";
 
 export const dynamic = "force-dynamic";
 
@@ -482,58 +483,7 @@ export default async function AnalisisPage({
                   </button>
                 </form>
               </div>
-              <table className="v2-table">
-                <thead>
-                  <tr>
-                    <th>Proveedor</th>
-                    <th>Período</th>
-                    <th style={{ textAlign: "right" }}>Items</th>
-                    <th style={{ textAlign: "right" }}>Total ARS</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batches.map((b) => (
-                    <tr key={b.batchId}>
-                      <td style={{ fontWeight: 500 }}>{b.provider}</td>
-                      <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
-                        {b.period ?? "—"}
-                      </td>
-                      <td
-                        style={{
-                          textAlign: "right",
-                          fontFamily: "var(--mono)",
-                          fontSize: 12,
-                        }}
-                      >
-                        {b.itemCount}
-                      </td>
-                      <td
-                        style={{
-                          textAlign: "right",
-                          fontWeight: 500,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        {fmtARS(b.totalArs)}
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        <form action={deleteStatementBatch}>
-                          <input type="hidden" name="batch_id" value={b.batchId} />
-                          <button
-                            type="submit"
-                            className="v2-btn sm ghost"
-                            style={{ color: "var(--red)" }}
-                            title="Borrar análisis de este resumen"
-                          >
-                            <Icon.trash />
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <BatchSelector batches={batches} />
             </div>
 
             <div className="v2-grid v2-grid-2-asym" style={{ marginBottom: 16 }}>
