@@ -51,14 +51,23 @@ function getMonthBounds(yyyymm?: string) {
 }
 
 export async function getActiveMonths(): Promise<string[]> {
-  // Meses en los que hay al menos un gasto paid/auto
+  const set = new Set<string>();
+
+  // Últimos 12 meses + próximo mes siempre disponibles
+  const now = new Date();
+  for (let i = -1; i <= 12; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    set.add(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+  }
+
+  // Agregar cualquier mes con data (por si tiene gastos más viejos que 12m)
   const { data } = await supabase()
     .from("expenses")
     .select("paid_at")
     .eq("user_id", WALLY_USER_ID)
-    .in("status", ["paid", "auto_approved"])
-    .not("paid_at", "is", null);
-  const set = new Set<string>();
+    .in("status", ["paid", "auto_approved"]);
   (data ?? []).forEach((e) => {
     if (!e.paid_at) return;
     const d = new Date(e.paid_at);
@@ -66,11 +75,7 @@ export async function getActiveMonths(): Promise<string[]> {
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
     );
   });
-  // Agrego mes actual siempre
-  const now = new Date();
-  set.add(
-    `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`,
-  );
+
   return Array.from(set).sort().reverse(); // más reciente primero
 }
 
