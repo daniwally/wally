@@ -109,11 +109,10 @@ export async function GET(req: Request) {
 
             const status = rule.auto_approve ? "auto_approved" : "pending_approval";
 
-            // Si es resumen de tarjeta con period_month detectado, usar último día del periodo como paid_at
-            const isCardStatement =
-              extracted.category === "tarjeta" && extracted.period_month;
+            // Si tiene period_month (tarjeta/cuota/expensas/suscripcion con mes explicito)
+            // y es auto_approved, usar último día del periodo como paid_at
             const paidAtForCard =
-              status === "auto_approved" && isCardStatement && extracted.period_month
+              status === "auto_approved" && extracted.period_month
                 ? lastDayOfMonth(extracted.period_month)
                 : null;
 

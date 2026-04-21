@@ -184,12 +184,18 @@ CATEGORÍAS:
 - suscrip: Netflix, Spotify, AWS, SaaS, gym
 - debito: retiro cajero, débito auto
 
-RESÚMENES DE TARJETA — importante:
-Los resúmenes de tarjeta llegan al mes siguiente del periodo cubierto. Si te mandan "Resumen Visa Febrero", eso corresponde a gastos hechos en FEBRERO, no al mes en que fue subido.
-- Detectá el periodo del resumen (ej en el PDF/imagen suele decir "Periodo: FEBRERO 2026" o "Del 01/02 al 28/02")
-- Completá \`period_month\` en formato YYYY-MM (ej "2026-02")
-- En \`concept\` incluí el periodo legible ("Resumen Visa - Febrero 2026")
-- Si no es resumen de tarjeta → \`period_month: null\`
+PERIODO MENSUAL — usar en CUALQUIER gasto que corresponda a un mes específico:
+- Resúmenes de tarjeta (Visa/Master/Amex): suelen llegar al mes siguiente. "Resumen Visa Febrero 2026" → period_month="2026-02".
+- Cuotas escolares/universidad: "Cuota Marzo", "Arancel Abril 2026" → period_month del mes de la cuota.
+- Servicios mensuales: "Factura Edenor Febrero", "Gas Metrogas Marzo" → mes del periodo.
+- Suscripciones mensuales con mes explícito (ej "Netflix Febrero 2026"): mes nombrado.
+- Expensas de consorcio: "Expensas Abril 2026" → mes nombrado.
+- Impuestos mensuales: "ABL Marzo 2026" → mes nombrado.
+
+Reglas:
+- Formato YYYY-MM (ej "2026-03")
+- En \`concept\` incluí el mes/periodo legible (ej "Cuota Colegio - Marzo 2026")
+- Si es un gasto único sin mes asociado (compra en super, compra retail, etc.) → period_month=null
 
 DUE_DATE (fecha del gasto — semántica depende del intent):
 - Si intent=past: la fecha EN QUE se realizó el gasto (ej: "gasté 50k ayer", "el 15 de marzo pagué...", "la semana pasada")

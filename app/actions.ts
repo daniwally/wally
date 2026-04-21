@@ -14,21 +14,19 @@ export async function payExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) return;
 
-  // Si es resumen de tarjeta con period_month → usar último día del periodo como paid_at
-  // para que aparezca en el mes correcto del dashboard (no en el mes en que lo marcaste pagado)
+  // Si el expense tiene period_month (cualquier categoría con periodo mensual: tarjeta, cuota,
+  // expensas, suscripción, etc.) → usar último día del periodo como paid_at
+  // Así aparece en el mes correcto del dashboard (no en el mes en que se marcó pagado)
   const { data: expense } = await supabase()
     .from("expenses")
-    .select("category_id, raw_extract_json")
+    .select("raw_extract_json")
     .eq("id", id)
     .eq("user_id", WALLY_USER_ID)
     .single();
 
   type ExtractedMeta = { period_month?: string | null };
   const extracted = expense?.raw_extract_json as ExtractedMeta | null;
-  const periodMonth =
-    expense?.category_id === "tarjeta" && extracted?.period_month
-      ? extracted.period_month
-      : null;
+  const periodMonth = extracted?.period_month ?? null;
 
   const paidAt = periodMonth
     ? (() => {
