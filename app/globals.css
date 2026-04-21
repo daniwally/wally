@@ -325,3 +325,8 @@ body {
   stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   flex-shrink: 0;
 }
+
+@keyframes v2-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
