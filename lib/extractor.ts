@@ -733,9 +733,13 @@ export async function extractStatementItems(
         source: { type: "base64"; media_type: "application/pdf"; data: string };
       },
 ): Promise<StatementItem[]> {
+  // Uso Sonnet para extracciones de items porque:
+  // 1. Los resúmenes pueden tener 100+ items y Haiku tenía max_tokens muy chico
+  // 2. Normalización de merchants complejos (prefijos DLO/MERPAGO/PAYU) requiere más contexto
+  // 3. Mejor detección de cuotas y fechas en formatos varios
   const response = await anthropic().messages.create({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 4000,
+    model: "claude-sonnet-4-6",
+    max_tokens: 16000,
     system: [
       { type: "text", text: STATEMENT_ITEMS_SYSTEM, cache_control: { type: "ephemeral" } },
     ],
@@ -744,14 +748,27 @@ export async function extractStatementItems(
     messages: [
       {
         role: "user",
-        content: [attachment, { type: "text", text: "Extraé todos los consumos del resumen." }],
+        content: [
+          attachment,
+          {
+            type: "text",
+            text: "Extraé TODOS los consumos del resumen (puede haber 50-150 items en múltiples páginas). No te saltees ninguno. Aplicá las exclusiones (pagos, IVA, percepciones, intereses, etc.).",
+          },
+        ],
       },
     ],
   });
 
   const toolUse = response.content.find((c) => c.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {
-    throw new Error("Claude did not call record_items");
+    // Log the actual response for debugging
+    const textBlocks = response.content
+      .filter((c) => c.type === "text")
+      .map((c) => (c.type === "text" ? c.text : ""))
+      .join(" ");
+    throw new Error(
+      `Claude did not call record_items. Stop reason: ${response.stop_reason}. Text: ${textBlocks.slice(0, 200)}`,
+    );
   }
   const input = toolUse.input as { items: StatementItem[] };
   return input.items ?? [];

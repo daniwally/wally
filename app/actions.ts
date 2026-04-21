@@ -255,7 +255,9 @@ async function analyzeSingleFile(
     const period = metadata.period_month;
 
     if (extractedItems.length === 0) {
-      return { error: `${file.name}: no detecté consumos` };
+      return {
+        error: `${file.name}: no detecté consumos (posiblemente saldo acreedor, resumen sin movimientos, o PDF no procesable)`,
+      };
     }
 
     const batchId = crypto.randomUUID();
