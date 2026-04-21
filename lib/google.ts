@@ -53,14 +53,20 @@ export type RawMail = {
   received_at: string;
 };
 
-export async function fetchRecentMails(
+export async function fetchMailsBySender(
   refreshToken: string,
+  senderPattern: string,
   sinceUnixSec: number,
   maxResults = 30,
 ): Promise<RawMail[]> {
   const gmail = gmailClient(refreshToken);
 
-  const query = `after:${sinceUnixSec} -in:spam -in:trash`;
+  const sinceDate = new Date(sinceUnixSec * 1000);
+  const y = sinceDate.getUTCFullYear();
+  const m = String(sinceDate.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(sinceDate.getUTCDate()).padStart(2, "0");
+
+  const query = `from:${senderPattern} after:${y}/${m}/${d} -in:spam -in:trash`;
 
   const list = await gmail.users.messages.list({
     userId: "me",
