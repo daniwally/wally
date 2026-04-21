@@ -140,11 +140,16 @@ CATEGORÍAS:
 - suscrip: Netflix, Spotify, AWS, SaaS, gym
 - debito: retiro cajero, débito auto
 
-DUE_DATE:
-- "el 25" con mes actual → próxima ocurrencia del día 25
-- "mañana" → fecha mañana
-- "el viernes" → próximo viernes
+DUE_DATE (fecha del gasto — semántica depende del intent):
+- Si intent=past: la fecha EN QUE se realizó el gasto (ej: "gasté 50k ayer", "el 15 de marzo pagué...", "la semana pasada")
+- Si intent=future: la fecha en que VENCE/hay que pagar
+- "el 25" → si es past, 25 del mes actual o anterior según contexto; si es future, próxima ocurrencia del 25
+- "ayer" / "anteayer" / "hace 3 días" → restar días a hoy
+- "el viernes pasado" → último viernes. "el viernes" → próximo viernes
+- "el mes pasado" / "en marzo" → usar día 15 como placeholder si no hay día específico
+- Si no hay fecha mencionada → null (el sistema usa hoy para past, o queda sin vencimiento para future)
 - Hoy es ${new Date().toISOString().slice(0, 10)}
+- Formato siempre YYYY-MM-DD
 
 Si no podés parsear razonablemente, is_expense: false con reason explicando qué falta.`;
 

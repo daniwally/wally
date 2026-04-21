@@ -259,6 +259,16 @@ async function handleExtracted(
   const currency = extracted.currency ?? "ARS";
   const isPast = extracted.intent === "past";
 
+  // Si es past con fecha explícita → usar esa fecha como paid_at
+  // Si es past sin fecha → usar ahora
+  // Si es future → date va a due_at, paid_at queda null
+  const paidAt = isPast
+    ? extracted.due_date
+      ? new Date(extracted.due_date + "T12:00:00Z").toISOString()
+      : new Date().toISOString()
+    : null;
+  const dueAt = !isPast ? extracted.due_date : null;
+
   const { data: inserted, error: insertErr } = await supabase()
     .from("expenses")
     .insert({
@@ -268,8 +278,8 @@ async function handleExtracted(
       amount_cents: amountCents,
       currency,
       category_id: extracted.category,
-      due_at: extracted.due_date,
-      paid_at: isPast ? new Date().toISOString() : null,
+      due_at: dueAt,
+      paid_at: paidAt,
       status: isPast ? "paid" : "pending_approval",
       paid_via: isPast ? `Telegram (${source})` : null,
       source_from: `telegram (${source})`,
@@ -299,7 +309,8 @@ async function handleExtracted(
     `💰 *${amountStr}* ${currency}`,
   ];
   if (extracted.due_date) {
-    lines.push(`📅 Vence: ${escapeMd(extracted.due_date)}`);
+    const dateLabel = isPast ? "Fecha" : "Vence";
+    lines.push(`📅 ${dateLabel}: ${escapeMd(extracted.due_date)}`);
   }
   lines.push("", `_${escapeMd(catInfo.label)} · desde ${escapeMd(source)}_`);
 
