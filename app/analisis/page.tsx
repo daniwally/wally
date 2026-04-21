@@ -6,7 +6,7 @@ import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
 import { CAT_COLOR, Icon } from "@/components/Icon";
 import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
-import { analyzeStatement, deleteStatementBatch } from "../actions";
+import { analyzeStatement, deleteStatementBatch, deleteAllStatements } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -455,12 +455,32 @@ export default async function AnalisisPage({
                 style={{
                   padding: "16px 20px",
                   borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap",
                 }}
               >
-                <div className="v2-card-title">Resúmenes analizados</div>
-                <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                  borrá un batch y desaparecen todos sus items del análisis
+                <div>
+                  <div className="v2-card-title">Resúmenes analizados ({batches.length})</div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    🗑 borrá un batch individual o limpiá todo el análisis
+                  </div>
                 </div>
+                <form action={deleteAllStatements}>
+                  <button
+                    type="submit"
+                    className="v2-btn sm"
+                    style={{
+                      color: "var(--red)",
+                      borderColor: "var(--red-soft)",
+                      background: "var(--red-soft)",
+                    }}
+                  >
+                    <Icon.trash /> Borrar todo
+                  </button>
+                </form>
               </div>
               <table className="v2-table">
                 <thead>

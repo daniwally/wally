@@ -330,6 +330,14 @@ export async function deleteStatementBatch(formData: FormData) {
   revalidatePath("/analisis");
 }
 
+export async function deleteAllStatements() {
+  await supabase()
+    .from("statement_items")
+    .delete()
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/analisis");
+}
+
 export async function revertExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) return;
