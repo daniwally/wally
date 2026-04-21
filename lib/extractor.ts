@@ -1,5 +1,6 @@
 import { anthropic } from "./anthropic";
 import { extractPdfText, moonshotToolCall, hasMoonshot } from "./moonshot";
+import { supabase, WALLY_USER_ID } from "./supabase";
 
 export type ExtractedExpense = {
   is_expense: boolean;
@@ -681,6 +682,88 @@ const ITEMS_TOOL = {
   },
 };
 
+export type CustomMerchantType = {
+  slug: string;
+  label: string;
+  icon: string;
+  description: string | null;
+  is_essential: boolean | null;
+};
+
+// Carga categorías custom del usuario
+export async function loadCustomMerchantTypes(): Promise<CustomMerchantType[]> {
+  const { data } = await supabase()
+    .from("custom_merchant_types")
+    .select("slug, label, icon, description, is_essential")
+    .eq("user_id", WALLY_USER_ID);
+  return (data ?? []).map((d) => ({
+    slug: d.slug,
+    label: d.label,
+    icon: d.icon ?? "·",
+    description: d.description,
+    is_essential: d.is_essential,
+  }));
+}
+
+const BASE_MERCHANT_TYPE_ENUM: (string | null)[] = [
+  "supermercado",
+  "restaurante",
+  "cafeteria",
+  "delivery_comida",
+  "kiosco_almacen",
+  "combustible",
+  "transporte",
+  "peaje",
+  "estacionamiento",
+  "farmacia",
+  "salud",
+  "educacion",
+  "indumentaria",
+  "electronica",
+  "retail",
+  "marketplace",
+  "hogar_muebles",
+  "ferreteria",
+  "streaming",
+  "saas",
+  "gaming",
+  "entretenimiento",
+  "viajes_aereos",
+  "hoteles",
+  "turismo_local",
+  "belleza",
+  "gimnasio",
+  "mascota",
+  "servicios_publicos",
+  "telecomunicaciones",
+  "seguro",
+  "impuesto",
+  "banco_comisiones",
+  "prestamo_cuota",
+  "regalo",
+  "donacion",
+  "profesional_servicios",
+  "otros",
+];
+
+function buildItemsTool(customTypes: CustomMerchantType[]) {
+  const fullEnum = [...BASE_MERCHANT_TYPE_ENUM, ...customTypes.map((c) => c.slug), null];
+  // Clonamos el schema y actualizamos solo el enum del merchant_type
+  const schema = JSON.parse(JSON.stringify(ITEMS_TOOL.input_schema));
+  schema.properties.items.items.properties.merchant_type.enum = fullEnum;
+  return { ...ITEMS_TOOL, input_schema: schema };
+}
+
+function buildCustomTypesPromptSection(customTypes: CustomMerchantType[]): string {
+  if (customTypes.length === 0) return "";
+  return `\n\nCATEGORÍAS CUSTOM DEL USUARIO (usá estas si matchean mejor que las built-in):\n${customTypes
+    .map(
+      (c) =>
+        `- ${c.slug}: ${c.label}${c.description ? ` — ${c.description}` : ""}${c.is_essential === true ? " (esencial)" : c.is_essential === false ? " (discrecional)" : ""}`,
+    )
+    .join("\n")}`;
+}
+
 // Metadata sobre merchant types (label + emoji para UI)
 export const MERCHANT_TYPE_META: Record<MerchantType, { label: string; icon: string }> = {
   supermercado: { label: "Supermercado", icon: "🛒" },
@@ -744,19 +827,27 @@ function pickItemsModel(fileBytes?: number): {
 
 // Intenta extraer con Kimi (Moonshot) — más barato ~10x vs Sonnet
 // Solo funciona para PDFs (usa file-extract API, no vision)
-async function tryKimi(pdfBuffer: Buffer, filename: string): Promise<StatementItem[] | null> {
+async function tryKimi(
+  pdfBuffer: Buffer,
+  filename: string,
+  customTypes: CustomMerchantType[],
+): Promise<StatementItem[] | null> {
   if (!hasMoonshot()) return null;
   try {
     const text = await extractPdfText(pdfBuffer, filename);
     if (!text || text.length < 100) return null;
 
+    const dynamicTool = buildItemsTool(customTypes);
+    const dynamicPrompt =
+      STATEMENT_ITEMS_SYSTEM + buildCustomTypesPromptSection(customTypes);
+
     const input = await moonshotToolCall({
-      systemPrompt: STATEMENT_ITEMS_SYSTEM,
+      systemPrompt: dynamicPrompt,
       userContent: `Analizá este resumen de tarjeta y extraé TODOS los consumos:\n\n${text.slice(0, 100000)}`,
       tool: {
         name: "record_items",
-        description: ITEMS_TOOL.description,
-        input_schema: ITEMS_TOOL.input_schema,
+        description: dynamicTool.description,
+        input_schema: dynamicTool.input_schema,
       },
       model: "moonshot-v1-128k",
       maxTokens: 16000,
@@ -789,7 +880,8 @@ export async function extractStatementItems(
 
   if (attachment.type === "document" && hasMoonshot()) {
     const pdfBuffer = Buffer.from(attachment.source.data, "base64");
-    const kimiItems = await tryKimi(pdfBuffer, "resumen.pdf");
+    const customTypes = await loadCustomMerchantTypes();
+    const kimiItems = await tryKimi(pdfBuffer, "resumen.pdf", customTypes);
     if (kimiItems && kimiItems.length > 0) {
       return kimiItems;
     }
@@ -797,14 +889,19 @@ export async function extractStatementItems(
   }
   const { model, maxTokens } = pickItemsModel(fileBytes);
 
+  const customTypes = await loadCustomMerchantTypes();
+  const dynamicTool = buildItemsTool(customTypes);
+  const dynamicPrompt =
+    STATEMENT_ITEMS_SYSTEM + buildCustomTypesPromptSection(customTypes);
+
   async function call(chosenModel: typeof model, chosenMaxTokens: number) {
     const response = await anthropic().messages.create({
       model: chosenModel,
       max_tokens: chosenMaxTokens,
       system: [
-        { type: "text", text: STATEMENT_ITEMS_SYSTEM, cache_control: { type: "ephemeral" } },
+        { type: "text", text: dynamicPrompt, cache_control: { type: "ephemeral" } },
       ],
-      tools: [ITEMS_TOOL],
+      tools: [dynamicTool],
       tool_choice: { type: "tool", name: "record_items" },
       messages: [
         {

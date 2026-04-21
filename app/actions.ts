@@ -362,6 +362,46 @@ export async function deleteAllStatements() {
   revalidatePath("/analisis");
 }
 
+export async function addCustomMerchantType(formData: FormData): Promise<void> {
+  const slug = String(formData.get("slug") || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_");
+  const label = String(formData.get("label") || "").trim();
+  const icon = String(formData.get("icon") || "·").trim() || "·";
+  const description = String(formData.get("description") || "").trim() || null;
+  const isEssentialRaw = String(formData.get("is_essential") || "");
+  const is_essential =
+    isEssentialRaw === "true" ? true : isEssentialRaw === "false" ? false : null;
+
+  if (!slug || !label) return;
+
+  await supabase().from("custom_merchant_types").upsert(
+    {
+      user_id: WALLY_USER_ID,
+      slug,
+      label,
+      icon,
+      description,
+      is_essential,
+    },
+    { onConflict: "user_id,slug" },
+  );
+  revalidatePath("/analisis");
+}
+
+export async function deleteCustomMerchantType(formData: FormData): Promise<void> {
+  const slug = String(formData.get("slug") || "");
+  if (!slug) return;
+  await supabase()
+    .from("custom_merchant_types")
+    .delete()
+    .eq("user_id", WALLY_USER_ID)
+    .eq("slug", slug);
+  revalidatePath("/analisis");
+}
+
 export async function reclassifyMerchant(formData: FormData): Promise<void> {
   const merchant = String(formData.get("merchant") || "").trim();
   const newType = String(formData.get("merchant_type") || "").trim();

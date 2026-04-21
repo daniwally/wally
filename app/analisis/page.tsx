@@ -10,6 +10,7 @@ import { analyzeStatement, deleteAllStatements } from "../actions";
 import { BatchSelector } from "@/components/v2/BatchSelector";
 import { MerchantTypeGrid } from "@/components/v2/MerchantTypeGrid";
 import { MerchantReclassifier } from "@/components/v2/MerchantReclassifier";
+import { CustomTypesManager } from "@/components/v2/CustomTypesManager";
 
 export const dynamic = "force-dynamic";
 
@@ -38,13 +39,28 @@ export default async function AnalisisPage({
 }) {
   const { ok, error } = await searchParams;
 
-  const { data: itemsData } = await supabase()
-    .from("statement_items")
-    .select(
-      "id, merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, merchant_type, is_essential, upload_batch_id, source_provider, source_period",
-    )
-    .eq("user_id", WALLY_USER_ID)
-    .order("amount_cents", { ascending: false });
+  const [{ data: itemsData }, { data: customTypesData }] = await Promise.all([
+    supabase()
+      .from("statement_items")
+      .select(
+        "id, merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, merchant_type, is_essential, upload_batch_id, source_provider, source_period",
+      )
+      .eq("user_id", WALLY_USER_ID)
+      .order("amount_cents", { ascending: false }),
+    supabase()
+      .from("custom_merchant_types")
+      .select("slug, label, icon, description, is_essential")
+      .eq("user_id", WALLY_USER_ID)
+      .order("label"),
+  ]);
+
+  const customTypes = (customTypesData ?? []) as Array<{
+    slug: string;
+    label: string;
+    icon: string | null;
+    description: string | null;
+    is_essential: boolean | null;
+  }>;
 
   const items = (itemsData ?? []) as ItemRow[];
   const itemsArs = items.filter((i) => i.currency === "ARS");
@@ -622,6 +638,9 @@ export default async function AnalisisPage({
 
             {/* Reclasificador de merchants (aprende para futuros scans) */}
             <MerchantReclassifier items={items} />
+
+            {/* Categorías personalizadas */}
+            <CustomTypesManager customTypes={customTypes} />
 
             {/* Resúmenes analizados — al final del todo para tener el análisis arriba y la gestión abajo */}
             <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>
