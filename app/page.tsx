@@ -10,6 +10,7 @@ import { DonutV2 } from "@/components/v2/DonutV2";
 import { PendRow } from "@/components/v2/PendRow";
 import { V2Insight } from "@/components/v2/InsightCard";
 import { MonthSelector } from "@/components/v2/MonthSelector";
+import { ExpensesTable } from "@/components/v2/ExpensesTable";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -563,98 +564,7 @@ export default async function DashboardPage({
               apruebes pendientes o subas manualmente, aparecen acá.
             </div>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table className="v2-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 70 }}>Fecha</th>
-                    <th>Proveedor</th>
-                    <th>Concepto</th>
-                    <th>Categoría</th>
-                    <th style={{ textAlign: "right" }}>Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagados
-                    .slice()
-                    .sort(
-                      (a, b) =>
-                        new Date(b.paid_at ?? 0).getTime() -
-                        new Date(a.paid_at ?? 0).getTime(),
-                    )
-                    .map((e) => {
-                      const cat = (e.category_id ?? "servicios") as CategoriaKey;
-                      const catInfo = CATEGORIAS[cat];
-                      const IconEl = CAT_ICON[cat] ?? CAT_ICON.servicios;
-                      const dateStr = e.paid_at
-                        ? new Date(e.paid_at).toLocaleDateString("es-AR", {
-                            day: "2-digit",
-                            month: "2-digit",
-                          })
-                        : "—";
-                      return (
-                        <tr key={e.id}>
-                          <td
-                            style={{
-                              fontFamily: "var(--mono)",
-                              fontSize: 12,
-                              color: "var(--text-3)",
-                            }}
-                          >
-                            {dateStr}
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <span
-                                className="v2-avatar"
-                                style={{
-                                  background: "var(--surface-2)",
-                                  color: CAT_COLOR[cat] ?? "#737373",
-                                  width: 26,
-                                  height: 26,
-                                }}
-                              >
-                                <IconEl />
-                              </span>
-                              <span style={{ fontSize: 13, fontWeight: 500 }}>{e.provider}</span>
-                            </div>
-                          </td>
-                          <td
-                            style={{
-                              fontSize: 12.5,
-                              color: "var(--text-2)",
-                              maxWidth: 320,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {e.concept ?? "—"}
-                          </td>
-                          <td>
-                            <span className="v2-badge">
-                              <span
-                                className="v2-cat-dot"
-                                style={{ background: CAT_COLOR[cat] ?? "#737373" }}
-                              />
-                              {catInfo.label}
-                            </span>
-                          </td>
-                          <td
-                            style={{
-                              textAlign: "right",
-                              fontWeight: 500,
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
-                            {fmtMoney(e.amount_cents / 100, e.currency as "ARS" | "USD")}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
+            <ExpensesTable expenses={pagados} />
           )}
         </div>
       </div>

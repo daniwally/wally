@@ -12,6 +12,7 @@ import { extractManualExpense, extractAttachmentExpense, type ManualExtracted } 
 import { downloadTelegramFile } from "@/lib/telegram";
 import { transcribeAudio } from "@/lib/whisper";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
+import { applyLearnedCategory } from "@/lib/category-learning";
 
 export const dynamic = "force-dynamic";
 
@@ -311,6 +312,14 @@ async function handleExtracted(
   const currency = extracted.currency ?? "ARS";
   const isPast = extracted.intent === "past";
 
+  // Aprendizaje: usar categoría aprendida si existe
+  const learnedCategory = await applyLearnedCategory(
+    extracted.category,
+    null,
+    extracted.provider,
+  );
+  const finalCategory = learnedCategory ?? extracted.category;
+
   // Prioridad para paid_at (si es past):
   // 1. period_month — resúmenes de tarjeta (ej Visa Febrero llega en marzo = cuenta en feb)
   // 2. due_date explícita mencionada
@@ -332,7 +341,7 @@ async function handleExtracted(
       concept: extracted.concept,
       amount_cents: amountCents,
       currency,
-      category_id: extracted.category,
+      category_id: finalCategory,
       due_at: dueAt,
       paid_at: paidAt,
       status: isPast ? "paid" : "pending_approval",
@@ -351,7 +360,7 @@ async function handleExtracted(
     return;
   }
 
-  const cat = (extracted.category ?? "servicios") as CategoriaKey;
+  const cat = ((finalCategory ?? "servicios") as CategoriaKey);
   const catInfo = CATEGORIAS[cat];
   const amountStr =
     currency === "USD" ? fmtUSDForTg(extracted.amount) : fmtARSForTg(extracted.amount);

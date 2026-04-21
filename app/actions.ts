@@ -9,6 +9,7 @@ import {
   type ManualExtracted,
 } from "@/lib/extractor";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
+import { getSenderKey, applyLearnedCategory } from "@/lib/category-learning";
 
 export async function payExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
@@ -148,8 +149,15 @@ export async function createManualExpense(formData: FormData): Promise<void> {
     : null;
   const dueAt = !isPast ? extracted!.due_date : null;
 
-  const category = (extracted!.category ?? "servicios") as CategoriaKey;
-  // validate category
+  // Aprendizaje: si el user ya corrigió la categoría para este provider antes,
+  // usar la categoría aprendida en vez de la de Claude.
+  const learnedCategory = await applyLearnedCategory(
+    extracted!.category,
+    null, // source_from para manual sin email
+    extracted!.provider,
+  );
+
+  const category = (learnedCategory ?? extracted!.category ?? "servicios") as CategoriaKey;
   if (!CATEGORIAS[category]) {
     insertErrorRedirect(`categoría inválida: ${category}`);
   }
@@ -220,15 +228,53 @@ export async function changeCategory(formData: FormData) {
   if (!id || !category) return;
   if (!CATEGORIAS[category as CategoriaKey]) return;
 
+  const { data: expense } = await supabase()
+    .from("expenses")
+    .select("source_from, provider")
+    .eq("id", id)
+    .eq("user_id", WALLY_USER_ID)
+    .single();
+
   await supabase()
     .from("expenses")
     .update({ category_id: category })
     .eq("id", id)
     .eq("user_id", WALLY_USER_ID);
+
+  // Aprendizaje: si este remitente/proveedor ya había sido corregido, actualizar la regla.
+  // Si no existe, crear una nueva. Así futuros gastos del mismo origen se auto-clasifican.
+  const senderKey = getSenderKey(expense?.source_from ?? null, expense?.provider ?? null);
+  if (senderKey) {
+    const { data: existingRule } = await supabase()
+      .from("rules")
+      .select("id")
+      .eq("user_id", WALLY_USER_ID)
+      .eq("sender_pattern", senderKey)
+      .maybeSingle();
+
+    if (existingRule) {
+      await supabase()
+        .from("rules")
+        .update({ category_id: category })
+        .eq("id", existingRule.id);
+    } else {
+      await supabase().from("rules").insert({
+        user_id: WALLY_USER_ID,
+        sender_pattern: senderKey,
+        provider: expense?.provider ?? null,
+        category_id: category,
+        auto_approve: false,
+        active: true,
+      });
+    }
+  }
+
   revalidatePath("/");
   revalidatePath("/mail");
   revalidatePath("/pendientes");
+  revalidatePath("/admin");
 }
+
 
 export async function deleteExpense(formData: FormData) {
   const id = String(formData.get("id") || "");

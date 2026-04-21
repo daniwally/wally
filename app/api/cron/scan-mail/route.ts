@@ -3,6 +3,7 @@ import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { fetchMailsBySender, fetchGeneralInbox } from "@/lib/google";
 import { extractExpense } from "@/lib/extractor";
 import { notifyNewExpense } from "@/lib/notify";
+import { applyLearnedCategory } from "@/lib/category-learning";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -221,6 +222,13 @@ export async function GET(req: Request) {
 
           const amountCents = Math.round(extracted.amount * 100);
 
+          const learnedCategory = await applyLearnedCategory(
+            extracted.category,
+            mail.from,
+            extracted.provider ?? null,
+          );
+          const finalCategoryGen = learnedCategory ?? extracted.category;
+
           const { data: inserted, error: insertErr } = await supabase()
             .from("expenses")
             .insert({
@@ -232,7 +240,7 @@ export async function GET(req: Request) {
               paid_at: null,
               amount_cents: amountCents,
               currency: extracted.currency ?? "ARS",
-              category_id: extracted.category,
+              category_id: finalCategoryGen,
               due_at: extracted.due_date,
               status: "pending_approval",
               confidence_provider: extracted.confidence,
