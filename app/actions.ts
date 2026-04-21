@@ -31,6 +31,32 @@ export async function ignoreExpense(formData: FormData) {
   revalidatePath("/mail");
 }
 
+export async function revertExpense(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+  await supabase()
+    .from("expenses")
+    .update({ status: "pending_approval", paid_at: null, paid_via: null })
+    .eq("id", id)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/");
+  revalidatePath("/mail");
+  revalidatePath("/pendientes");
+}
+
+export async function deleteExpense(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+  await supabase()
+    .from("expenses")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/");
+  revalidatePath("/mail");
+  revalidatePath("/pendientes");
+}
+
 export async function snoozeExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
   const days = Number(formData.get("days") || 3);

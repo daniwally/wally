@@ -4,7 +4,14 @@ import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtMoney, fmtDateShort } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { KPI } from "@/components/v2/KPI";
-import { CAT_COLOR } from "@/components/Icon";
+import { CAT_COLOR, Icon } from "@/components/Icon";
+import {
+  payExpense,
+  ignoreExpense,
+  snoozeExpense,
+  revertExpense,
+  deleteExpense,
+} from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -272,6 +279,21 @@ function DetailPanel({ expense }: { expense: Expense }) {
         <Extract label="Estado" v={statusChip(expense.status as Status).label} conf={null} />
       </div>
 
+      <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--text-3)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 500,
+          marginBottom: 10,
+        }}
+      >
+        Acciones
+      </div>
+      <ActionButtons expense={expense} />
+
       {expense.raw_extract_json && (
         <>
           <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
@@ -307,6 +329,75 @@ function DetailPanel({ expense }: { expense: Expense }) {
           </details>
         </>
       )}
+    </div>
+  );
+}
+
+function ActionButtons({ expense }: { expense: Expense }) {
+  const status = expense.status as Status;
+  const isPending = status === "pending_approval";
+  const isPaid = status === "paid" || status === "auto_approved";
+  const isIgnored = status === "ignored";
+  const isPostponed = status === "postponed";
+
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {(isPending || isPostponed) && (
+        <>
+          <form action={payExpense} style={{ flex: "1 1 100px" }}>
+            <input type="hidden" name="id" value={expense.id} />
+            <button type="submit" className="v2-btn primary" style={{ width: "100%", justifyContent: "center" }}>
+              <Icon.check /> Marcar pagado
+            </button>
+          </form>
+          <form action={ignoreExpense} style={{ flex: "0 0 auto" }}>
+            <input type="hidden" name="id" value={expense.id} />
+            <button type="submit" className="v2-btn" title="Ignorar (sacar del total)">
+              <Icon.x /> Ignorar
+            </button>
+          </form>
+        </>
+      )}
+
+      {isPending && (
+        <form action={snoozeExpense} style={{ flex: "0 0 auto" }}>
+          <input type="hidden" name="id" value={expense.id} />
+          <input type="hidden" name="days" value="3" />
+          <button type="submit" className="v2-btn" title="Posponer 3 días">
+            <Icon.clock /> 3d
+          </button>
+        </form>
+      )}
+
+      {(isPaid || isIgnored) && (
+        <form action={revertExpense} style={{ flex: "1 1 100px" }}>
+          <input type="hidden" name="id" value={expense.id} />
+          <button type="submit" className="v2-btn" style={{ width: "100%", justifyContent: "center" }}>
+            ↺ Volver a pendiente
+          </button>
+        </form>
+      )}
+
+      {isPaid && (
+        <form action={ignoreExpense} style={{ flex: "0 0 auto" }}>
+          <input type="hidden" name="id" value={expense.id} />
+          <button type="submit" className="v2-btn" title="Mover a ignorados">
+            <Icon.x /> Ignorar
+          </button>
+        </form>
+      )}
+
+      <form action={deleteExpense} style={{ flex: "0 0 auto", marginLeft: "auto" }}>
+        <input type="hidden" name="id" value={expense.id} />
+        <button
+          type="submit"
+          className="v2-btn ghost"
+          title="Borrar de la DB"
+          style={{ color: "var(--red)" }}
+        >
+          <Icon.trash />
+        </button>
+      </form>
     </div>
   );
 }
