@@ -11,6 +11,7 @@ import { BatchSelector } from "@/components/v2/BatchSelector";
 import { MerchantTypeGrid } from "@/components/v2/MerchantTypeGrid";
 import { MerchantReclassifier } from "@/components/v2/MerchantReclassifier";
 import { CustomTypesManager } from "@/components/v2/CustomTypesManager";
+import { Collapsible } from "@/components/v2/Collapsible";
 
 export const dynamic = "force-dynamic";
 
@@ -537,31 +538,22 @@ export default async function AnalisisPage({
               </div>
             </div>
 
-            {/* Cuotas en curso */}
+            {/* Cuotas en curso (minimizado por default) */}
             {cuotas.length > 0 && (
               <div className="v2-card" style={{ padding: 0 }}>
-                <div
-                  style={{
-                    padding: "16px 20px",
-                    borderBottom: "1px solid var(--border)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
+                <Collapsible
+                  title="Cuotas en curso"
+                  subtitle="compras financiadas que todavía no terminaron"
+                  badge={
+                    <span
+                      className="v2-badge"
+                      style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
+                    >
+                      pendiente: {fmtARS(totalCuotasPendientes)}
+                    </span>
+                  }
+                  defaultOpen={false}
                 >
-                  <div>
-                    <div className="v2-card-title">Cuotas en curso</div>
-                    <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                      compras financiadas que todavía no terminaron
-                    </div>
-                  </div>
-                  <span
-                    className="v2-badge"
-                    style={{ background: "var(--amber-soft)", color: "var(--amber)" }}
-                  >
-                    pendiente: {fmtARS(totalCuotasPendientes)}
-                  </span>
-                </div>
                 <table className="v2-table">
                   <thead>
                     <tr>
@@ -633,6 +625,7 @@ export default async function AnalisisPage({
                     })}
                   </tbody>
                 </table>
+                </Collapsible>
               </div>
             )}
 
@@ -642,40 +635,37 @@ export default async function AnalisisPage({
             {/* Categorías personalizadas */}
             <CustomTypesManager customTypes={customTypes} />
 
-            {/* Resúmenes analizados — al final del todo para tener el análisis arriba y la gestión abajo */}
+            {/* Resúmenes analizados (minimizado por default) */}
             <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>
-              <div
-                style={{
-                  padding: "16px 20px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
+              <Collapsible
+                title={`Resúmenes analizados (${batches.length})`}
+                subtitle="seleccioná uno o varios para analizar con IA o borrarlos"
+                defaultOpen={false}
               >
-                <div>
-                  <div className="v2-card-title">Resúmenes analizados ({batches.length})</div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
-                    seleccioná uno o varios para analizar con IA o borrarlos
-                  </div>
+                <div
+                  style={{
+                    padding: "12px 20px",
+                    borderBottom: "1px solid var(--border)",
+                    display: "flex",
+                    justifyContent: "flex-end",
+                  }}
+                >
+                  <form action={deleteAllStatements}>
+                    <button
+                      type="submit"
+                      className="v2-btn sm"
+                      style={{
+                        color: "var(--red)",
+                        borderColor: "var(--red-soft)",
+                        background: "var(--red-soft)",
+                      }}
+                    >
+                      <Icon.trash /> Borrar todo
+                    </button>
+                  </form>
                 </div>
-                <form action={deleteAllStatements}>
-                  <button
-                    type="submit"
-                    className="v2-btn sm"
-                    style={{
-                      color: "var(--red)",
-                      borderColor: "var(--red-soft)",
-                      background: "var(--red-soft)",
-                    }}
-                  >
-                    <Icon.trash /> Borrar todo
-                  </button>
-                </form>
-              </div>
-              <BatchSelector batches={batches} />
+                <BatchSelector batches={batches} />
+              </Collapsible>
             </div>
           </>
         )}
