@@ -187,10 +187,10 @@ export default async function AnalisisPage({
         <div className="v2-card" style={{ marginBottom: 16 }}>
           <div className="v2-card-header">
             <div>
-              <div className="v2-card-title">Subir resumen para analizar</div>
+              <div className="v2-card-title">Subir resúmenes para analizar</div>
               <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
-                Extrae consumos, merchants y cuotas. <strong>No se crea gasto</strong> — solo
-                se suma al análisis.
+                Podés subir varios resúmenes a la vez (cmd/ctrl+click para seleccionar
+                múltiples). <strong>No se crean gastos</strong> — solo se suman al análisis.
               </div>
             </div>
           </div>
@@ -203,6 +203,7 @@ export default async function AnalisisPage({
               type="file"
               name="file"
               accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+              multiple
               className="v2-input"
               style={{ flex: 1, minWidth: 260, padding: "6px 10px", fontSize: 13 }}
               required
@@ -211,6 +212,9 @@ export default async function AnalisisPage({
               <Icon.sparkle /> Analizar
             </SubmitButton>
           </form>
+          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>
+            Max 4MB por archivo · PDF o imagen · se procesan en paralelo
+          </div>
         </div>
 
         {items.length === 0 ? (

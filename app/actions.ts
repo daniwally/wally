@@ -202,22 +202,31 @@ function analysisErrorRedirect(reason: string): never {
   redirect(`/analisis?error=${encodeURIComponent(reason)}`);
 }
 
-export async function analyzeStatement(formData: FormData): Promise<void> {
-  const file = formData.get("file") as File | null;
-  if (!file || file.size === 0) analysisErrorRedirect("Subí un archivo");
+type AnalysisAtt =
+  | {
+      type: "image";
+      source: {
+        type: "base64";
+        media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+        data: string;
+      };
+    }
+  | {
+      type: "document";
+      source: { type: "base64"; media_type: "application/pdf"; data: string };
+    };
 
+async function analyzeSingleFile(
+  file: File,
+): Promise<{ provider: string; itemCount: number } | { error: string }> {
   if (file.size > MAX_FILE_BYTES) {
-    analysisErrorRedirect(`Archivo muy grande (max ${MAX_FILE_BYTES / 1024 / 1024}MB)`);
+    return { error: `${file.name}: muy grande (max ${MAX_FILE_BYTES / 1024 / 1024}MB)` };
   }
-
   const buffer = Buffer.from(await file.arrayBuffer());
   const base64 = buffer.toString("base64");
   const mime = file.type;
 
-  type Att =
-    | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
-    | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
-  let attachment: Att;
+  let attachment: AnalysisAtt;
   if (mime === "application/pdf") {
     attachment = {
       type: "document",
@@ -234,61 +243,78 @@ export async function analyzeStatement(formData: FormData): Promise<void> {
       source: { type: "base64", media_type: mime, data: base64 },
     };
   } else {
-    analysisErrorRedirect(`Tipo no soportado: ${mime}`);
+    return { error: `${file.name}: tipo no soportado (${mime})` };
   }
-
-  // Dos calls paralelas: metadata del resumen (provider + período) + items
-  let provider = "Resumen";
-  let period: string | null = null;
-  let items: Array<{
-    merchant: string;
-    merchant_raw: string | null;
-    amount: number;
-    currency: "ARS" | "USD";
-    purchase_date: string | null;
-    cuota_numero: number | null;
-    cuota_total: number | null;
-    category: string | null;
-  }> = [];
 
   try {
     const [metadata, extractedItems] = await Promise.all([
       extractAttachmentExpense(attachment, "Solo dame provider y period_month del resumen."),
       extractStatementItems(attachment),
     ]);
-    provider = metadata.provider ?? "Resumen";
-    period = metadata.period_month;
-    items = extractedItems;
+    const provider = metadata.provider ?? "Resumen";
+    const period = metadata.period_month;
+
+    if (extractedItems.length === 0) {
+      return { error: `${file.name}: no detecté consumos` };
+    }
+
+    const batchId = crypto.randomUUID();
+    const rows = extractedItems.map((it) => ({
+      expense_id: null,
+      user_id: WALLY_USER_ID,
+      upload_batch_id: batchId,
+      source_provider: provider,
+      source_period: period,
+      merchant: it.merchant,
+      merchant_raw: it.merchant_raw,
+      amount_cents: Math.round(it.amount * 100),
+      currency: it.currency,
+      purchase_date: it.purchase_date,
+      cuota_numero: it.cuota_numero,
+      cuota_total: it.cuota_total,
+      category_id: it.category,
+    }));
+
+    const { error: insertErr } = await supabase().from("statement_items").insert(rows);
+    if (insertErr) return { error: `${file.name}: ${insertErr.message}` };
+
+    return { provider, itemCount: extractedItems.length };
   } catch (e) {
-    analysisErrorRedirect(e instanceof Error ? e.message : "error de extracción");
+    return { error: `${file.name}: ${e instanceof Error ? e.message : "error"}` };
   }
+}
 
-  if (items.length === 0) {
-    analysisErrorRedirect("No detecté consumos en el resumen");
-  }
+export async function analyzeStatement(formData: FormData): Promise<void> {
+  const files = formData.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) analysisErrorRedirect("Subí al menos un archivo");
 
-  const batchId = crypto.randomUUID();
-  const rows = items.map((it) => ({
-    expense_id: null,
-    user_id: WALLY_USER_ID,
-    upload_batch_id: batchId,
-    source_provider: provider,
-    source_period: period,
-    merchant: it.merchant,
-    merchant_raw: it.merchant_raw,
-    amount_cents: Math.round(it.amount * 100),
-    currency: it.currency,
-    purchase_date: it.purchase_date,
-    cuota_numero: it.cuota_numero,
-    cuota_total: it.cuota_total,
-    category_id: it.category,
-  }));
+  // Procesa todos en paralelo
+  const results = await Promise.all(files.map((f) => analyzeSingleFile(f)));
 
-  const { error: insertErr } = await supabase().from("statement_items").insert(rows);
-  if (insertErr) analysisErrorRedirect(insertErr.message);
+  const successes = results.filter(
+    (r): r is { provider: string; itemCount: number } => !("error" in r),
+  );
+  const errors = results.filter((r): r is { error: string } => "error" in r);
+
+  const totalItems = successes.reduce((s, r) => s + r.itemCount, 0);
+  const summary = `${successes.length}/${files.length} resúmenes · ${totalItems} consumos`;
 
   revalidatePath("/analisis");
-  redirect(`/analisis?ok=${encodeURIComponent(`${provider}: ${items.length} consumos`)}`);
+
+  if (errors.length > 0 && successes.length === 0) {
+    analysisErrorRedirect(errors.map((e) => e.error).join(" · "));
+  }
+
+  if (errors.length > 0) {
+    // Some succeeded, some failed — redirect with summary in ok + warning in error
+    redirect(
+      `/analisis?ok=${encodeURIComponent(summary)}&error=${encodeURIComponent(
+        errors.map((e) => e.error).join(" · "),
+      )}`,
+    );
+  }
+
+  redirect(`/analisis?ok=${encodeURIComponent(summary)}`);
 }
 
 export async function deleteStatementBatch(formData: FormData) {
