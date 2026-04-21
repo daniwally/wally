@@ -8,7 +8,7 @@ export type ExtractedExpense = {
   currency: "ARS" | "USD" | null;
   due_date: string | null;
   period_month: string | null; // YYYY-MM del periodo cubierto (solo para resúmenes de tarjeta)
-  category: "servicios" | "tarjeta" | "expensas" | "impuestos" | "compras" | "suscrip" | "debito" | null;
+  category: "servicios" | "tarjeta" | "expensas" | "impuestos" | "compras" | "suscrip" | "debito" | "familia" | "calu" | "prestamo" | null;
   confidence: number;
   reason: string | null;
 };
@@ -40,7 +40,10 @@ Categorías disponibles:
 - impuestos (ABL, patente, monotributo, ingresos brutos)
 - compras (MercadoLibre, Amazon, retail)
 - suscrip (Netflix, Spotify, AWS, SaaS)
-- debito (debitos autos de banco)
+- prestamo (cuotas préstamo, crédito bancario, mutuo — SIEMPRE preferir sobre debito si aparece la palabra "préstamo", "credito", "mutuo")
+- debito (SOLO retiros cajero, transferencias genéricas — NO para préstamos)
+- familia (cuota colegio/universidad, obra social, pediatra, cumpleaños, regalos a familiares)
+- calu (mascota: veterinario, alimento, peluquería canina, guardería)
 
 Currency: ARS si está en pesos (buscar "$", "pesos", "ARS", "$AR"). USD si está en dólares (buscar "US$", "USD", "u$s", "u$d", "dolares").
 
@@ -122,7 +125,7 @@ const TOOL_DEFINITION = {
       },
       category: {
         type: ["string", "null"],
-        enum: ["servicios", "tarjeta", "expensas", "impuestos", "compras", "suscrip", "debito", null],
+        enum: ["servicios", "tarjeta", "expensas", "impuestos", "compras", "suscrip", "debito", "familia", "calu", "prestamo", null],
       },
       confidence: {
         type: "number",
@@ -201,10 +204,10 @@ CATEGORÍAS:
 - impuestos: ABL, patente, monotributo, IIBB
 - compras: super, ropa, electro, delivery, MercadoLibre, retail
 - suscrip: Netflix, Spotify, AWS, SaaS, gym adulto
-- debito: retiro cajero, débito auto genérico
+- prestamo: cuotas de préstamos personales/prendarios/hipotecarios, devoluciones a amigos por dinero prestado, pagos de créditos bancarios. PALABRAS CLAVE: "préstamo", "prestamo", "cuota préstamo", "crédito bancario", "credito", "mutuo". SIEMPRE preferir esta sobre "debito" cuando aparezca alguna de estas palabras.
+- debito: SOLO para retiros de cajero, transferencias genéricas o débitos automáticos que no caigan en otra categoría. NO usar para préstamos.
 - familia: cuotas escolares/universidad, obra social, pediatra, cumpleaños familiares, regalos a familiares, actividades de hijos, campamentos, material escolar
 - calu: gastos de la mascota Calu — veterinario, alimento mascota, accesorios, peluquería canina, guardería
-- prestamo: cuotas de préstamos personales/prendarios/hipotecarios, devoluciones a amigos por dinero prestado, pagos de créditos bancarios
 
 PERIODO MENSUAL (period_month) — regla PRINCIPAL:
 

@@ -134,12 +134,17 @@ export default async function DashboardPage({
     .sort((a, b) => b.value - a.value);
   const totalTarjetas = tarjetasItems.reduce((s, t) => s + t.value, 0);
 
-  // Breakdown de débitos/bancos (category=debito)
+  // Breakdown de débitos/bancos/préstamos
   const bancosMap = new Map<string, number>();
   pagados
-    .filter((e) => e.category_id === "debito" && e.currency === "ARS")
+    .filter(
+      (e) =>
+        (e.category_id === "debito" || e.category_id === "prestamo") &&
+        e.currency === "ARS",
+    )
     .forEach((e) => {
-      const key = e.provider.trim();
+      const prefix = e.category_id === "prestamo" ? "Préstamo · " : "Débito · ";
+      const key = prefix + e.provider.trim();
       bancosMap.set(key, (bancosMap.get(key) ?? 0) + e.amount_cents / 100);
     });
   const bancosItems = Array.from(bancosMap.entries())
@@ -401,9 +406,9 @@ export default async function DashboardPage({
           <div className="v2-card">
             <div className="v2-card-header">
               <div>
-                <div className="v2-card-title">Bancos / Débitos</div>
+                <div className="v2-card-title">Bancos · Débitos · Préstamos</div>
                 <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
-                  Débitos automáticos y movimientos · {selMonthLabel.toLowerCase()}
+                  Débitos automáticos y cuotas de préstamos · {selMonthLabel.toLowerCase()}
                 </div>
               </div>
               <span className="v2-badge">{fmtARS(totalBancos)}</span>
