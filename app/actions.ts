@@ -195,6 +195,22 @@ export async function revertExpense(formData: FormData) {
   revalidatePath("/pendientes");
 }
 
+export async function changeCategory(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const category = String(formData.get("category") || "");
+  if (!id || !category) return;
+  if (!CATEGORIAS[category as CategoriaKey]) return;
+
+  await supabase()
+    .from("expenses")
+    .update({ category_id: category })
+    .eq("id", id)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/");
+  revalidatePath("/mail");
+  revalidatePath("/pendientes");
+}
+
 export async function deleteExpense(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) return;

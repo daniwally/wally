@@ -11,6 +11,7 @@ import {
   snoozeExpense,
   revertExpense,
   deleteExpense,
+  changeCategory,
 } from "../actions";
 import { triggerScan } from "../admin/actions";
 import { ScanButton } from "@/components/v2/ScanButton";
