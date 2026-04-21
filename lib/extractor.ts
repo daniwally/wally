@@ -146,26 +146,30 @@ export type ManualExtracted = {
 
 const MANUAL_SYSTEM_PROMPT = `Sos un parser de gastos personales. El usuario te escribe en español (Argentina) en lenguaje natural y tu tarea es extraer estructura.
 
-DETECTÁS LA INTENCIÓN (regla más importante — no te equivoques):
+DETECTÁS LA INTENCIÓN (regla crítica):
 
-1. Si el INPUT es UN ARCHIVO (PDF/foto de comprobante/resumen/ticket):
-   → DEFAULT: intent="past" (el usuario está subiendo un comprobante de algo que YA PAGÓ)
-   → Solo intent="future" si el documento explícitamente dice "saldo impago", "pendiente de pago" Y el vencimiento es en el FUTURO
+POR DEFECTO todo gasto nuevo es intent="future" (a pagar / en revisión). SOLO marcás intent="past" si hay EVIDENCIA EXPLÍCITA de que ya fue pagado.
 
-2. Si el INPUT es TEXTO con verbo claro:
-   - "past": gasté, compré, pagué, salió, abonó, aboné, cancelé, tuve que pagar, se fue
-   - "future": tengo que pagar (no pagué todavía), me toca, vence, recordame, acordate
+Evidencia de past (cualquiera alcanza):
+1. El usuario en caption/texto usa un verbo PASADO: "gasté", "compré", "pagué", "pagado", "aboné", "salió", "cancelé", "pagamos", "paid"
+2. El documento muestra un stamp/sello/texto que diga "PAGADO", "CANCELADO", "PAYMENT RECEIVED", "CONFIRMACIÓN DE PAGO", "PAGO PROCESADO"
+3. Es un ticket de compra física de productos (super, resto, kiosco) — esos son siempre past porque ya pagaste para llevártelo
 
-3. Comparación contra fecha ACTUAL (${new Date().toISOString().slice(0, 10)}):
-   - Si la fecha mencionada (due_date o period_month) ya pasó → intent="past" (no importa cómo esté formulado)
-   - Si la fecha es futura → intent="future" solo si el texto implica que aún no se pagó
+NO es past:
+- Un resumen de tarjeta (aunque venga del banco) → default future, el usuario lo paga al vencimiento
+- Una factura de servicio con fecha de vencimiento → default future
+- Una cuota de colegio/gym → default future
+- Cualquier bill/invoice sin marca de "pagado" → future
 
 EJEMPLOS:
-- PDF "Resumen Visa Febrero 2026" subido en abril → intent=past (el periodo ya terminó)
-- Foto de ticket del super → intent=past (siempre)
-- Texto "vence el 25 de luz" sin verbo pasado → intent=future
-- Texto "pagué el 25 de luz" → intent=past
-- Texto "hay que pagar la luz" → intent=future
+- PDF "Resumen Visa Febrero 2026" subido sin caption → intent=future (a revisar y aprobar)
+- PDF resumen con caption "ya pagué esto" → intent=past
+- Ticket del super físico → intent=past (compras de productos)
+- Texto "pagué la luz ayer" → intent=past
+- Texto "tengo que pagar la luz" → intent=future
+- Texto sin verbo: "factura luz $24k" → intent=future
+
+Si dudás → intent=future (pendiente de aprobar es mejor que past erróneo).
 
 AMOUNTS:
 - "50 lucas" = 50000 ARS
@@ -272,8 +276,8 @@ export async function extractAttachmentExpense(
   userCaption?: string,
 ): Promise<ManualExtracted> {
   const instruction = userCaption
-    ? `El usuario agrega: "${userCaption}". Extraé el gasto del archivo adjunto. Por defecto intent="past" (el usuario sube el comprobante DESPUÉS de pagar).`
-    : 'Analizá este comprobante/factura/ticket/resumen/recibo y extraé el gasto que muestra. El usuario lo está subiendo DESPUÉS de pagarlo, entonces intent="past" salvo que el documento explícitamente indique que es una factura pendiente con vencimiento futuro.';
+    ? `El usuario agrega: "${userCaption}". Extraé el gasto del archivo. Aplicá la regla de intent del system prompt — default future salvo que el texto o el doc indiquen pago efectuado.`
+    : 'Analizá este archivo y extraé el gasto. Seguí la regla de intent del system prompt: default future (a pagar), solo intent=past si hay marca explícita de pago en el documento o si es un ticket de compra física (super/resto/retail).';
 
   const response = await anthropic().messages.create({
     model: "claude-haiku-4-5-20251001",
