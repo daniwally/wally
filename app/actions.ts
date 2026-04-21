@@ -66,13 +66,6 @@ export async function ignoreExpense(formData: FormData) {
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-// Regla fija: todo lo que venga por MERPAGO* es marketplace.
-function isMerpago(merchantRaw: string | null | undefined): boolean {
-  if (!merchantRaw) return false;
-  const upper = merchantRaw.toUpperCase();
-  return upper.includes("MERPAGO*") || upper.includes("MERPAGO ");
-}
-
 function lastDayOfMonthISO(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -288,8 +281,6 @@ async function analyzeSingleFile(
 
     const rows = extractedItems.map((it) => {
       const override = overridesMap.get(it.merchant);
-      // Regla dura: MERPAGO* → siempre marketplace (override de usuario tiene precedencia)
-      const forcedType = isMerpago(it.merchant_raw) ? "marketplace" : null;
       return {
         expense_id: null,
         user_id: WALLY_USER_ID,
@@ -304,8 +295,7 @@ async function analyzeSingleFile(
         cuota_numero: it.cuota_numero,
         cuota_total: it.cuota_total,
         category_id: it.category,
-        merchant_type:
-          override?.merchant_type ?? forcedType ?? it.merchant_type,
+        merchant_type: override?.merchant_type ?? it.merchant_type,
         is_essential: override?.is_essential ?? it.is_essential,
       };
     });
@@ -419,23 +409,15 @@ export async function rebuildStatementItemsClassification(): Promise<{
   try {
     const { data: items } = await supabase()
       .from("statement_items")
-      .select("merchant, merchant_raw, merchant_type")
+      .select("merchant, merchant_type")
       .eq("user_id", WALLY_USER_ID);
 
     if (!items || items.length === 0) return { total: 0, updated: 0 };
 
-    // Unique merchants con su tipo actual Y si alguno de sus raws es MERPAGO
-    const merchantTypeMap = new Map<
-      string,
-      { type: string | null; isMerpago: boolean }
-    >();
+    const merchantTypeMap = new Map<string, string | null>();
     items.forEach((it) => {
-      const existing = merchantTypeMap.get(it.merchant);
-      const mp = isMerpago(it.merchant_raw);
-      if (existing) {
-        if (mp) existing.isMerpago = true;
-      } else {
-        merchantTypeMap.set(it.merchant, { type: it.merchant_type, isMerpago: mp });
+      if (!merchantTypeMap.has(it.merchant)) {
+        merchantTypeMap.set(it.merchant, it.merchant_type);
       }
     });
     const merchants = Array.from(merchantTypeMap.keys());
@@ -452,10 +434,8 @@ export async function rebuildStatementItemsClassification(): Promise<{
       ]),
     );
 
-    // Merchants que no tienen override ni son MERPAGO → los re-clasificamos con Claude
-    const needClassify = merchants.filter(
-      (m) => !overrideMap.has(m) && !merchantTypeMap.get(m)?.isMerpago,
-    );
+    // Merchants que no tienen override → los re-clasificamos con Claude
+    const needClassify = merchants.filter((m) => !overrideMap.has(m));
 
     let classifications: Record<string, string> = {};
     if (needClassify.length > 0) {
@@ -521,22 +501,15 @@ Si un merchant no matchea claramente → "otros".`,
       }
     }
 
-    // Aplicar: overrides primero, MERPAGO→marketplace segundo, Claude tercero
+    // Aplicar: overrides primero, luego classifications de Claude
     let updated = 0;
     for (const merchant of merchants) {
-      const info = merchantTypeMap.get(merchant)!;
-      let newType: string | null = null;
-
-      if (overrideMap.has(merchant)) {
-        newType = overrideMap.get(merchant)!.type;
-      } else if (info.isMerpago) {
-        newType = "marketplace";
-      } else if (classifications[merchant]) {
-        newType = classifications[merchant];
-      }
+      const currentType = merchantTypeMap.get(merchant);
+      const newType =
+        overrideMap.get(merchant)?.type ?? classifications[merchant] ?? null;
 
       if (!newType) continue;
-      if (newType === info.type) continue; // sin cambio
+      if (newType === currentType) continue; // sin cambio
 
       const essential = overrideMap.get(merchant)?.essential;
       const updatePayload: Record<string, unknown> = { merchant_type: newType };
@@ -544,19 +517,11 @@ Si un merchant no matchea claramente → "otros".`,
         updatePayload.is_essential = essential;
       }
 
-      // Aplicar selectivamente por merchant_raw (solo los items MERPAGO si aplica)
-      let query = supabase()
+      await supabase()
         .from("statement_items")
         .update(updatePayload)
         .eq("user_id", WALLY_USER_ID)
         .eq("merchant", merchant);
-
-      if (info.isMerpago && !overrideMap.has(merchant)) {
-        // Solo actualizar items MERPAGO (deja otros en lo que diga Claude)
-        query = query.or("merchant_raw.ilike.*MERPAGO*,merchant_raw.ilike.*MERPAGO %");
-      }
-
-      await query;
       updated++;
     }
 
