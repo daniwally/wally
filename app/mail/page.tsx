@@ -2,7 +2,9 @@ import Link from "next/link";
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtMoney, fmtDateShort } from "@/lib/format";
-import { KPICard } from "@/components/dashboard/KPICard";
+import { PageHeader } from "@/components/PageHeader";
+import { KPI } from "@/components/v2/KPI";
+import { CAT_COLOR } from "@/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,7 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
 
   const { data: allExpenses } = await supabase()
     .from("expenses")
-    .select("status, detected_at, paid_at")
+    .select("status, paid_at")
     .eq("user_id", WALLY_USER_ID);
 
   const total = allExpenses?.length ?? 0;
@@ -56,183 +58,146 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
   const selected = id ? (expenses ?? []).find((e) => e.id === id) : (expenses ?? [])[0];
 
   return (
-    <div style={{ padding: "0 4px" }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Mail parser</h1>
-        <p className="page-subtitle">Auditá qué detectó Claude en cada mail escaneado</p>
-      </div>
+    <>
+      <PageHeader section="General" title="Parser de mails" />
 
-      <div
-        className="r-grid"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr 1fr",
-          gap: 16,
-          marginBottom: 24,
-        }}
-      >
-        <KPICard
-          label="Total detectados"
-          value={String(total)}
-          sub="desde conexión Gmail"
-          accent="blue"
-        />
-        <KPICard
-          label="Necesitan atención"
-          value={String(pendientes)}
-          sub="pendientes de aprobar"
-          accent="red"
-        />
-        <KPICard
-          label="Auto-aprobados"
-          value={String(auto)}
-          sub="por reglas con auto"
-          accent="green"
-        />
-        <KPICard
-          label="Pagados este mes"
-          value={String(paidThisMonth)}
-          sub="confirmados vía bot o auto"
-          accent="yellow"
-        />
-      </div>
-
-      <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 20 }}>
-        {/* Lista */}
-        <div
-          className="paper-plain"
-          style={{ padding: 22, border: "2px solid #1a1a1a", borderRadius: 14 }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              marginBottom: 14,
-              flexWrap: "wrap",
-              gap: 8,
-            }}
-          >
-            <div className="section-title">Inbox escaneado</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {FILTERS.map((f) => (
-                <Link
-                  key={f.key}
-                  href={`/mail?filter=${f.key}`}
-                  className={`chip ${f.key === filter ? "yellow" : ""}`}
-                  style={{ textDecoration: "none", cursor: "pointer" }}
-                >
-                  {f.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          {(!expenses || expenses.length === 0) && (
-            <div
-              className="t-hand"
-              style={{ color: "var(--ink-3)", padding: "16px 0", fontSize: 15 }}
-            >
-              No hay expenses en este filtro. Probá agregar remitentes en{" "}
-              <Link href="/admin" style={{ color: "var(--ink)" }}>
-                /admin
-              </Link>{" "}
-              y correr un scan.
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {(expenses ?? []).map((e) => {
-              const cat = (e.category_id ?? "servicios") as CategoriaKey;
-              const catInfo = CATEGORIAS[cat];
-              const isSelected = selected?.id === e.id;
-              const statusChip = statusChipInfo(e.status as Status);
-
-              return (
-                <Link
-                  key={e.id}
-                  href={`/mail?filter=${filter}&id=${e.id}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "10px 12px",
-                    borderBottom: "1px dashed rgba(0,0,0,0.15)",
-                    background: isSelected ? "rgba(255,231,121,0.3)" : "transparent",
-                    borderLeft: isSelected
-                      ? "3px solid var(--yellow-deep)"
-                      : "3px solid transparent",
-                    textDecoration: "none",
-                    color: "var(--ink)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: "50% 40% 50% 45%",
-                      background: catInfo.soft,
-                      border: "2px solid var(--ink)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 16,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {catInfo.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="t-hand" style={{ fontSize: 13, color: "var(--ink-3)" }}>
-                      {truncate(e.source_from ?? "—", 50)} ·{" "}
-                      {relativeTime(e.detected_at)}
-                    </div>
-                    <div
-                      className="t-hand"
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {e.provider} — {e.concept ?? "—"}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", marginRight: 8 }}>
-                    <div className="t-title" style={{ fontSize: 16, lineHeight: 1 }}>
-                      {fmtMoney(e.amount_cents / 100, e.currency as "ARS" | "USD")}
-                    </div>
-                  </div>
-                  <span className={`chip ${statusChip.color}`}>{statusChip.label}</span>
-                </Link>
-              );
-            })}
-          </div>
+      <div className="v2-content">
+        <div className="v2-grid v2-grid-4" style={{ marginBottom: 20 }}>
+          <KPI title="Total detectados" value={String(total)} sub="desde conexión Gmail" />
+          <KPI
+            title="Necesitan atención"
+            value={String(pendientes)}
+            sub="pendientes de aprobar"
+            trend={pendientes > 0 ? "up" : "flat"}
+            trendLabel={pendientes > 0 ? "revisar" : "ok"}
+          />
+          <KPI title="Auto-aprobados" value={String(auto)} sub="por reglas con auto" />
+          <KPI title="Pagados este mes" value={String(paidThisMonth)} sub="confirmados" />
         </div>
 
-        {/* Detalle */}
-        <div>
-          {selected ? (
-            <DetailPanel expense={selected} />
-          ) : (
+        <div className="v2-grid v2-grid-2-asym">
+          <div className="v2-card" style={{ padding: 0 }}>
             <div
-              className="paper-plain"
               style={{
-                padding: 22,
-                border: "2px solid #1a1a1a",
-                borderRadius: 14,
-                color: "var(--ink-3)",
+                padding: "16px 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderBottom: "1px solid var(--border)",
+                gap: 10,
+                flexWrap: "wrap",
               }}
             >
-              Seleccioná un gasto de la lista para ver el detalle de extracción.
+              <div className="v2-card-title">Inbox escaneado</div>
+              <div className="v2-seg">
+                {FILTERS.map((f) => (
+                  <Link
+                    key={f.key}
+                    href={`/mail?filter=${f.key}`}
+                    className={f.key === filter ? "active" : ""}
+                  >
+                    {f.label}
+                  </Link>
+                ))}
+              </div>
             </div>
-          )}
+
+            {!expenses || expenses.length === 0 ? (
+              <div style={{ padding: 30, color: "var(--text-3)", fontSize: 13 }}>
+                No hay expenses en este filtro.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="v2-table">
+                  <tbody>
+                    {expenses.map((e) => {
+                      const statusInfo = statusChip(e.status as Status);
+                      const cat = (e.category_id ?? "servicios") as CategoriaKey;
+                      const catInfo = CATEGORIAS[cat];
+                      const isSelected = selected?.id === e.id;
+
+                      return (
+                        <tr
+                          key={e.id}
+                          style={{
+                            background: isSelected ? "var(--surface-2)" : "transparent",
+                          }}
+                        >
+                          <td style={{ width: 20 }}>
+                            <span
+                              className="v2-cat-dot"
+                              style={{ background: CAT_COLOR[cat] ?? "#737373" }}
+                            />
+                          </td>
+                          <td>
+                            <Link
+                              href={`/mail?filter=${filter}&id=${e.id}`}
+                              style={{
+                                textDecoration: "none",
+                                color: "var(--text)",
+                                display: "block",
+                              }}
+                            >
+                              <div style={{ fontSize: 13, fontWeight: 500 }}>
+                                {e.provider}{e.concept ? ` · ${e.concept}` : ""}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 11.5,
+                                  color: "var(--text-3)",
+                                  marginTop: 2,
+                                  fontFamily: "var(--mono)",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  maxWidth: 320,
+                                }}
+                              >
+                                {e.source_from ?? "—"}
+                              </div>
+                            </Link>
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 500,
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              {fmtMoney(e.amount_cents / 100, e.currency as "ARS" | "USD")}
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                              {catInfo.label}
+                            </div>
+                          </td>
+                          <td style={{ width: 100 }}>
+                            <span className={`v2-badge ${statusInfo.cls}`}>{statusInfo.label}</span>
+                          </td>
+                          <td style={{ width: 80, color: "var(--text-3)", fontSize: 12 }}>
+                            {relativeTime(e.detected_at)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="v2-card">
+            {selected ? (
+              <DetailPanel expense={selected} />
+            ) : (
+              <div style={{ color: "var(--text-3)", fontSize: 13 }}>
+                Seleccioná un gasto de la lista para ver el detalle.
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -260,99 +225,74 @@ function DetailPanel({ expense }: { expense: Expense }) {
   const catInfo = CATEGORIAS[cat];
 
   return (
-    <div
-      className="paper-plain"
-      style={{
-        padding: 22,
-        border: "2px solid #1a1a1a",
-        borderRadius: 14,
-        position: "relative",
-      }}
-    >
-      <div className="tape" style={{ top: -16, left: 32 }} />
-
+    <div>
+      <div className="v2-card-title">Vista previa</div>
       <div
-        className="t-hand"
         style={{
-          fontSize: 12,
-          color: "var(--ink-3)",
-          textTransform: "uppercase",
-          letterSpacing: 1,
+          fontFamily: "var(--serif)",
+          fontSize: 22,
+          marginTop: 6,
+          lineHeight: 1.2,
         }}
       >
-        Gasto extraído
-      </div>
-      <div className="t-title" style={{ fontSize: 22, lineHeight: 1.1, marginTop: 4, marginBottom: 4 }}>
         {expense.provider}
       </div>
-      <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-2)", marginBottom: 12 }}>
-        {expense.concept ?? "—"}
+      <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 4 }}>
+        {expense.source_from ?? "—"} · {relativeTime(expense.detected_at)}
       </div>
 
-      <div className="t-hand" style={{ fontSize: 13, color: "var(--ink-3)", marginBottom: 14 }}>
-        <b>De:</b> {expense.source_from ?? "—"}
-        <br />
-        <b>Detectado:</b> {new Date(expense.detected_at).toLocaleString("es-AR")}
-        <br />
-        <b>Gmail ID:</b>{" "}
-        <span className="t-mono" style={{ fontSize: 11 }}>
-          {expense.source_message_id ?? "—"}
-        </span>
-      </div>
+      <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
 
-      <hr className="scribble" />
-
-      <div className="t-hand" style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
-        Lo que Wally extrajo:
-      </div>
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          fontFamily: "var(--hand)",
-          fontSize: 14,
+          fontSize: 12,
+          color: "var(--text-3)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 500,
+          marginBottom: 10,
         }}
       >
-        <ExtractedField label="Proveedor" value={expense.provider} conf={expense.confidence_provider} />
-        <ExtractedField label="Concepto" value={expense.concept ?? "—"} conf={null} />
-        <ExtractedField
+        Campos extraídos
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+        <Extract label="Proveedor" v={expense.provider} conf={expense.confidence_provider} />
+        <Extract label="Concepto" v={expense.concept ?? "—"} conf={null} />
+        <Extract
           label="Monto"
-          value={fmtMoney(expense.amount_cents / 100, expense.currency as "ARS" | "USD")}
+          v={fmtMoney(expense.amount_cents / 100, expense.currency as "ARS" | "USD")}
           conf={expense.confidence_amount}
         />
-        <ExtractedField
+        <Extract
           label="Vencimiento"
-          value={expense.due_at ? fmtDateShort(expense.due_at) : "—"}
+          v={expense.due_at ? fmtDateShort(expense.due_at) : "—"}
           conf={expense.confidence_due}
         />
-        <ExtractedField
-          label="Categoría"
-          value={`${catInfo.label} ${catInfo.icon}`}
-          conf={null}
-        />
-        <ExtractedField
-          label="Estado"
-          value={statusChipInfo(expense.status as Status).label}
-          conf={null}
-        />
+        <Extract label="Categoría" v={catInfo.label} conf={null} />
+        <Extract label="Estado" v={statusChip(expense.status as Status).label} conf={null} />
       </div>
 
       {expense.raw_extract_json && (
         <>
-          <hr className="scribble" />
+          <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
           <details>
             <summary
-              className="t-hand"
-              style={{ fontSize: 13, color: "var(--ink-3)", cursor: "pointer" }}
+              style={{
+                fontSize: 12,
+                color: "var(--text-3)",
+                cursor: "pointer",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontWeight: 500,
+              }}
             >
-              Ver respuesta cruda de Claude ↓
+              Respuesta cruda de Claude ↓
             </summary>
             <pre
-              className="t-mono"
               style={{
+                fontFamily: "var(--mono)",
                 fontSize: 11,
-                background: "var(--paper-2)",
+                background: "var(--surface-2)",
                 padding: 10,
                 borderRadius: 6,
                 marginTop: 8,
@@ -371,34 +311,26 @@ function DetailPanel({ expense }: { expense: Expense }) {
   );
 }
 
-function ExtractedField({
-  label,
-  value,
-  conf,
-}: {
-  label: string;
-  value: string;
-  conf: number | null;
-}) {
-  const color = conf == null ? "var(--ink-4)" : conf >= 97 ? "var(--green)" : "var(--orange)";
+function Extract({ label, v, conf }: { label: string; v: string; conf: number | null }) {
+  const color = conf == null ? "var(--text-3)" : conf >= 97 ? "var(--green)" : "var(--amber)";
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-      <span style={{ width: 110, color: "var(--ink-3)", fontSize: 13 }}>{label}</span>
-      <span style={{ flex: 1, fontWeight: 700 }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <span style={{ width: 100, color: "var(--text-3)", fontSize: 12 }}>{label}</span>
+      <span style={{ flex: 1, fontWeight: 500 }}>{v}</span>
       {conf != null && (
-        <span style={{ fontSize: 11, color, fontFamily: "var(--mono)" }}>{conf}%</span>
+        <span style={{ fontSize: 11, fontFamily: "var(--mono)", color }}>{conf}%</span>
       )}
     </div>
   );
 }
 
-function statusChipInfo(status: Status) {
+function statusChip(status: Status) {
   return {
-    pending_approval: { color: "red", label: "aprobar" },
-    paid: { color: "green", label: "pagado" },
-    auto_approved: { color: "green", label: "auto" },
-    postponed: { color: "orange", label: "pospuesto" },
-    ignored: { color: "", label: "ignorado" },
+    pending_approval: { cls: "red", label: "Aprobar" },
+    paid: { cls: "green", label: "Pagado" },
+    auto_approved: { cls: "green", label: "Auto" },
+    postponed: { cls: "amber", label: "Pospuesto" },
+    ignored: { cls: "", label: "Ignorado" },
   }[status];
 }
 
@@ -413,8 +345,4 @@ function relativeTime(iso: string) {
   const d = Math.floor(h / 24);
   if (d < 30) return `hace ${d}d`;
   return new Date(iso).toLocaleDateString("es-AR");
-}
-
-function truncate(s: string, n: number) {
-  return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }

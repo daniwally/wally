@@ -1,6 +1,9 @@
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
+import { CAT_COLOR, Icon } from "@/components/Icon";
+import { PageHeader } from "@/components/PageHeader";
+import { Toggle } from "@/components/v2/Toggle";
 import {
   addRule,
   removeRule,
@@ -48,36 +51,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       .select("category_id, amount_cents, currency")
       .eq("user_id", WALLY_USER_ID)
       .in("status", ["paid", "auto_approved", "pending_approval"])
-      .or(`and(paid_at.gte.${monthStart},paid_at.lt.${monthEnd}),and(paid_at.is.null,detected_at.gte.${monthStart},detected_at.lt.${monthEnd})`),
+      .or(
+        `and(paid_at.gte.${monthStart},paid_at.lt.${monthEnd}),and(paid_at.is.null,detected_at.gte.${monthStart},detected_at.lt.${monthEnd})`,
+      ),
     supabase()
       .from("expenses")
-      .select("id, provider, concept, amount_cents, currency, category_id, source_from, detected_at")
+      .select("id, provider, amount_cents, currency, category_id, source_from, detected_at")
       .eq("user_id", WALLY_USER_ID)
       .is("rule_id", null)
       .in("status", ["pending_approval"])
       .order("detected_at", { ascending: false }),
   ]);
-
-  // Agrupar sugerencias por source_from → un botón "crear regla" por remitente
-  const suggestionsBySender = new Map<
-    string,
-    {
-      sender: string;
-      count: number;
-      expenses: Array<{ id: string; provider: string; amount_cents: number; currency: string; category_id: string | null }>;
-    }
-  >();
-  (unruledExpenses ?? []).forEach((e) => {
-    const from = e.source_from ?? "desconocido";
-    const existing = suggestionsBySender.get(from);
-    if (existing) {
-      existing.count++;
-      existing.expenses.push(e);
-    } else {
-      suggestionsBySender.set(from, { sender: from, count: 1, expenses: [e] });
-    }
-  });
-  const suggestions = Array.from(suggestionsBySender.values());
 
   const spentByCat: Record<string, number> = {};
   (paidThisMonth ?? [])
@@ -86,559 +70,476 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       spentByCat[e.category_id!] = (spentByCat[e.category_id!] ?? 0) + e.amount_cents / 100;
     });
 
+  const suggestionsBySender = new Map<
+    string,
+    {
+      sender: string;
+      count: number;
+      firstExpenseId: string;
+      firstProvider: string;
+      firstCatId: string | null;
+    }
+  >();
+  (unruledExpenses ?? []).forEach((e) => {
+    const from = e.source_from ?? "desconocido";
+    const existing = suggestionsBySender.get(from);
+    if (existing) {
+      existing.count++;
+    } else {
+      suggestionsBySender.set(from, {
+        sender: from,
+        count: 1,
+        firstExpenseId: e.id,
+        firstProvider: e.provider,
+        firstCatId: e.category_id,
+      });
+    }
+  });
+  const suggestions = Array.from(suggestionsBySender.values());
+
   const gmails = (accounts ?? []).filter((a) => a.type === "gmail");
 
   return (
-    <div style={{ padding: "0 4px" }}>
-      <div style={{ marginBottom: 24 }}>
-        <h1 className="page-title">Admin</h1>
-        <p className="page-subtitle">Cuentas, remitentes a monitorear y configuración</p>
-      </div>
-
-      {ok && (
-        <div
-          className="sticky sticky-green"
-          style={{ marginBottom: 20, display: "inline-block" }}
-        >
-          ✓ Gmail conectado: <strong>{decodeURIComponent(ok)}</strong>
-        </div>
-      )}
-      {error && (
-        <div
-          className="sticky sticky-pink"
-          style={{ marginBottom: 20, display: "inline-block" }}
-        >
-          ⚠ Error: {decodeURIComponent(error)}
-        </div>
-      )}
-
-      {/* Cuentas conectadas */}
-      <div
-        className="paper-plain"
-        style={{
-          padding: 22,
-          border: "2px solid #1a1a1a",
-          borderRadius: 14,
-          marginBottom: 20,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 16,
-          }}
-        >
-          <div className="section-title">Cuentas de Gmail</div>
-          <a href="/api/auth/google/start" className="btn-sketch primary">
-            + Conectar Gmail
-          </a>
-        </div>
-
-        {gmails.length === 0 ? (
-          <div
-            className="t-hand"
-            style={{ color: "var(--ink-3)", padding: "16px 0", fontSize: 15 }}
-          >
-            No hay cuentas conectadas. Clickeá <strong>Conectar Gmail</strong> para empezar.
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {gmails.map((a) => (
-              <div
-                key={a.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "12px 16px",
-                  border: "1.5px solid #1a1a1a",
-                  borderRadius: 10,
-                  background: "var(--paper-2)",
-                }}
-              >
-                <div style={{ fontSize: 22 }}>📧</div>
-                <div style={{ flex: 1 }}>
-                  <div className="t-hand" style={{ fontWeight: 700, fontSize: 16 }}>
-                    {a.account}
-                  </div>
-                  <div
-                    className="t-hand"
-                    style={{ fontSize: 13, color: "var(--ink-3)" }}
-                  >
-                    {a.status === "ok" ? "● conectada" : `● ${a.status}`}
-                    {a.last_scan_at && (
-                      <>
-                        {" · último scan: "}
-                        {new Date(a.last_scan_at).toLocaleString("es-AR", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </>
-                    )}
-                  </div>
-                </div>
-                <span className={`chip ${a.status === "ok" ? "green" : "red"}`}>
-                  {a.status}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Remitentes a monitorear */}
-      <div
-        className="paper-plain"
-        style={{
-          padding: 22,
-          border: "2px solid #1a1a1a",
-          borderRadius: 14,
-          marginBottom: 20,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <div className="section-title">Remitentes a monitorear</div>
-            <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-3)" }}>
-              Agregá los emails que te mandan facturas. El cron solo escanea estos.
-            </div>
-          </div>
+    <>
+      <PageHeader
+        section="Configuración"
+        title="Cuentas & Reglas"
+        right={
           <form action={triggerScan}>
-            <button className="btn-sketch" type="submit">
-              ⟳ Escanear ahora
+            <button type="submit" className="v2-btn primary">
+              <Icon.sparkle /> Escanear ahora
             </button>
           </form>
-        </div>
+        }
+      />
 
-        <form
-          action={addRule}
-          className="r-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "2fr 1.2fr 1fr auto auto",
-            gap: 10,
-            marginBottom: 16,
-            alignItems: "center",
-          }}
-        >
-          <input
-            name="sender"
-            placeholder="e-resumen@mensajesgalicia.com.ar"
-            required
-            style={{
-              fontFamily: "var(--mono)",
-              fontSize: 13,
-              padding: "10px 12px",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 8,
-              background: "var(--paper)",
-            }}
-          />
-          <input
-            name="provider"
-            placeholder="Visa Galicia (opcional)"
-            style={{
-              fontFamily: "var(--hand)",
-              fontSize: 14,
-              padding: "10px 12px",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 8,
-              background: "var(--paper)",
-            }}
-          />
-          <select
-            name="category"
-            defaultValue="servicios"
-            style={{
-              fontFamily: "var(--hand)",
-              fontSize: 14,
-              padding: "10px 12px",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 8,
-              background: "var(--paper)",
-            }}
-          >
-            {Object.entries(CATEGORIAS).map(([k, c]) => (
-              <option key={k} value={k}>
-                {c.icon} {c.label}
-              </option>
-            ))}
-          </select>
-          <label
-            className="t-hand"
-            style={{
-              fontSize: 13,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              color: "var(--ink-3)",
-            }}
-          >
-            <input type="checkbox" name="auto_approve" /> auto
-          </label>
-          <button type="submit" className="btn-sketch primary">
-            + Agregar
-          </button>
-        </form>
-
-        {!rules || rules.length === 0 ? (
+      <div className="v2-content">
+        {ok && (
           <div
-            className="t-hand"
-            style={{ color: "var(--ink-3)", padding: "8px 0", fontSize: 14 }}
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              border: "1px solid var(--green)",
+              background: "var(--green-soft)",
+              color: "var(--green)",
+              borderRadius: 10,
+              fontSize: 13,
+            }}
           >
-            Todavía no hay remitentes configurados. Agregá el primero arriba ↑
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {rules.map((r) => {
-              const cat = (r.category_id ?? "servicios") as CategoriaKey;
-              const catInfo = CATEGORIAS[cat];
-              return (
-                <div
-                  key={r.id}
-                  className="r-grid"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "2fr 1.2fr auto auto auto auto",
-                    gap: 12,
-                    alignItems: "center",
-                    padding: "10px 14px",
-                    border: "1.5px solid var(--ink)",
-                    borderRadius: 10,
-                    background: "var(--paper-2)",
-                  }}
-                >
-                  <div
-                    className="t-mono"
-                    style={{
-                      fontSize: 13,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {r.sender_pattern}
-                  </div>
-                  <div className="t-hand" style={{ fontSize: 14, fontWeight: 700 }}>
-                    {r.provider || "—"}
-                  </div>
-                  <span
-                    className="chip"
-                    style={{ background: catInfo.soft, fontSize: 12 }}
-                  >
-                    {catInfo.icon} {catInfo.label}
-                  </span>
-                  {r.auto_approve && <span className="chip green">auto</span>}
-                  <span
-                    className="t-hand"
-                    style={{ fontSize: 12, color: "var(--ink-3)" }}
-                  >
-                    {r.hits} hits
-                  </span>
-                  <form action={removeRule}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button
-                      type="submit"
-                      className="btn-sketch ghost"
-                      style={{ fontSize: 12, padding: "4px 10px" }}
-                    >
-                      ✕
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
+            ✓ Gmail conectado: <strong>{decodeURIComponent(ok)}</strong>
           </div>
         )}
-      </div>
-
-      {/* Sugerencias: remitentes detectados sin regla */}
-      {suggestions.length > 0 && (
-        <div
-          className="paper-plain"
-          style={{
-            padding: 22,
-            border: "2px solid #1a1a1a",
-            borderRadius: 14,
-            marginBottom: 20,
-            background: "linear-gradient(180deg, var(--paper) 0%, rgba(199,219,239,0.3) 100%)",
-          }}
-        >
-          <div style={{ marginBottom: 14 }}>
-            <div className="section-title">✨ Sugerencias del bot</div>
-            <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-3)" }}>
-              Claude detectó gastos de remitentes que{" "}
-              <span className="hl-blue">no están en tu lista</span>. Convertilos en reglas con un
-              click para auto-procesarlos.
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {suggestions.map((s) => {
-              const first = s.expenses[0];
-              const cat = (first.category_id ?? "servicios") as CategoriaKey;
-              const catInfo = CATEGORIAS[cat];
-
-              return (
-                <div
-                  key={s.sender}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "12px 14px",
-                    border: "1.5px solid var(--ink)",
-                    borderRadius: 10,
-                    background: "var(--blue-soft)",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: "50% 40% 50% 45%",
-                      background: catInfo.soft,
-                      border: "2px solid var(--ink)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 16,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {catInfo.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      className="t-mono"
-                      style={{
-                        fontSize: 12,
-                        color: "var(--ink-3)",
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {s.sender}
-                    </div>
-                    <div className="t-hand" style={{ fontSize: 15, fontWeight: 700 }}>
-                      {first.provider}{" "}
-                      <span className="t-hand" style={{ fontWeight: 400, color: "var(--ink-3)" }}>
-                        · {s.count} gasto{s.count > 1 ? "s" : ""} detectado{s.count > 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </div>
-                  <form action={createRuleFromExpense}>
-                    <input type="hidden" name="expense_id" value={first.id} />
-                    <button type="submit" className="btn-sketch primary">
-                      + crear regla
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Presupuestos */}
-      <div
-        className="paper-plain"
-        style={{
-          padding: 22,
-          border: "2px solid #1a1a1a",
-          borderRadius: 14,
-          marginBottom: 20,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <div className="section-title">Presupuestos mensuales</div>
-            <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-3)" }}>
-              Tope por categoría (ARS). Si lo pasás, se marca en rojo.
-            </div>
-          </div>
-        </div>
-
-        <form
-          action={setBudget}
-          className="r-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.2fr 1fr auto",
-            gap: 10,
-            marginBottom: 16,
-            alignItems: "center",
-          }}
-        >
-          <select
-            name="category"
-            defaultValue="servicios"
-            style={{
-              fontFamily: "var(--hand)",
-              fontSize: 14,
-              padding: "10px 12px",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 8,
-              background: "var(--paper)",
-            }}
-          >
-            {Object.entries(CATEGORIAS).map(([k, c]) => (
-              <option key={k} value={k}>
-                {c.icon} {c.label}
-              </option>
-            ))}
-          </select>
-          <input
-            name="amount"
-            type="number"
-            min="0"
-            step="1000"
-            placeholder="Monto ARS (ej 50000)"
-            required
-            style={{
-              fontFamily: "var(--hand)",
-              fontSize: 14,
-              padding: "10px 12px",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 8,
-              background: "var(--paper)",
-            }}
-          />
-          <button type="submit" className="btn-sketch primary">
-            Guardar
-          </button>
-        </form>
-
-        {!budgets || budgets.length === 0 ? (
+        {error && (
           <div
-            className="t-hand"
-            style={{ color: "var(--ink-3)", padding: "8px 0", fontSize: 14 }}
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              border: "1px solid var(--red)",
+              background: "var(--red-soft)",
+              color: "var(--red)",
+              borderRadius: 10,
+              fontSize: 13,
+            }}
           >
-            Todavía no hay presupuestos. Agregá uno arriba ↑
+            ⚠ Error: {decodeURIComponent(error)}
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {budgets
-              .sort((a, b) => (a.category_id ?? "").localeCompare(b.category_id ?? ""))
-              .map((b) => {
-                const cat = (b.category_id ?? "servicios") as CategoriaKey;
-                const catInfo = CATEGORIAS[cat];
-                const budget = b.amount_cents / 100;
-                const spent = spentByCat[cat] ?? 0;
-                const pct = Math.min(100, Math.round((spent / budget) * 100));
-                const over = spent > budget;
-                const barColor = over
-                  ? "var(--red)"
-                  : pct >= 80
-                    ? "var(--orange)"
-                    : "var(--green)";
+        )}
 
-                return (
-                  <div
-                    key={b.id}
-                    style={{
-                      padding: "12px 14px",
-                      border: "1.5px solid var(--ink)",
-                      borderRadius: 10,
-                      background: over ? "rgba(248,184,184,0.3)" : "var(--paper-2)",
-                    }}
-                  >
+        {/* Cuentas */}
+        <div className="v2-card" style={{ marginBottom: 16 }}>
+          <div className="v2-card-header">
+            <div>
+              <div className="v2-card-title">Cuentas conectadas</div>
+              <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
+                Fuentes que Wally monitorea
+              </div>
+            </div>
+            <a href="/api/auth/google/start" className="v2-btn primary">
+              <Icon.plus /> Conectar Gmail
+            </a>
+          </div>
+
+          {gmails.length === 0 ? (
+            <div style={{ color: "var(--text-3)", fontSize: 13, padding: "8px 0" }}>
+              No hay cuentas conectadas.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                gap: 12,
+              }}
+            >
+              {gmails.map((a) => (
+                <div
+                  key={a.id}
+                  style={{ padding: 14, border: "1px solid var(--border)", borderRadius: 10 }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        marginBottom: 6,
-                      }}
+                      className="v2-avatar"
+                      style={{ background: "var(--red-soft)", color: "var(--red)" }}
                     >
-                      <span style={{ fontSize: 20 }}>{catInfo.icon}</span>
-                      <span className="t-hand" style={{ fontWeight: 700, fontSize: 15 }}>
-                        {catInfo.label}
-                      </span>
-                      <span
-                        className="t-hand"
-                        style={{ flex: 1, fontSize: 13, color: "var(--ink-3)" }}
-                      >
-                        {fmtARS(spent)} / {fmtARS(budget)}{" "}
-                        {over && (
-                          <span style={{ color: "var(--red)", fontWeight: 700 }}>
-                            · ${Math.round(spent - budget).toLocaleString("es-AR")} encima
-                          </span>
-                        )}
-                      </span>
-                      <form action={removeBudget}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <button
-                          type="submit"
-                          className="btn-sketch ghost"
-                          style={{ fontSize: 12, padding: "4px 10px" }}
-                        >
-                          ✕
-                        </button>
-                      </form>
+                      <Icon.mail />
                     </div>
-                    <div
-                      style={{
-                        height: 10,
-                        background: "var(--paper)",
-                        border: "1.5px solid var(--ink)",
-                        borderRadius: 20,
-                        overflow: "hidden",
-                      }}
-                    >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: "var(--text-3)" }}>Gmail</div>
                       <div
                         style={{
-                          width: `${pct}%`,
-                          height: "100%",
-                          background: barColor,
-                          transition: "width 0.3s ease",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
                         }}
-                      />
+                      >
+                        {a.account}
+                      </div>
                     </div>
+                    <span className={`v2-badge ${a.status === "ok" ? "green" : "red"}`}>
+                      <span className="dot" />
+                      {a.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 10 }}>
+                    {a.last_scan_at
+                      ? `último scan: ${new Date(a.last_scan_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}`
+                      : "sin scan todavía"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sugerencias */}
+        {suggestions.length > 0 && (
+          <div
+            className="v2-card"
+            style={{
+              marginBottom: 16,
+              background: "var(--blue-soft)",
+              borderColor: "var(--blue)",
+            }}
+          >
+            <div className="v2-card-header">
+              <div>
+                <div
+                  className="v2-card-title"
+                  style={{ color: "var(--blue)", display: "flex", gap: 6, alignItems: "center" }}
+                >
+                  <Icon.sparkle /> Sugerencias del bot
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 2 }}>
+                  Claude detectó gastos de remitentes sin regla. Convertí en regla con un click.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {suggestions.map((s) => {
+                const cat = (s.firstCatId ?? "servicios") as CategoriaKey;
+                const catInfo = CATEGORIAS[cat];
+                return (
+                  <div
+                    key={s.sender}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 12px",
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 10,
+                    }}
+                  >
+                    <span
+                      className="v2-cat-dot"
+                      style={{ background: CAT_COLOR[cat] ?? "#737373", width: 10, height: 10 }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>
+                        {s.firstProvider}{" "}
+                        <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
+                          · {catInfo.label} · {s.count} gasto{s.count > 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          color: "var(--text-3)",
+                          fontFamily: "var(--mono)",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {s.sender}
+                      </div>
+                    </div>
+                    <form action={createRuleFromExpense}>
+                      <input type="hidden" name="expense_id" value={s.firstExpenseId} />
+                      <button type="submit" className="v2-btn sm primary">
+                        <Icon.plus /> Crear regla
+                      </button>
+                    </form>
                   </div>
                 );
               })}
+            </div>
           </div>
         )}
-      </div>
 
-      <div
-        className="paper-plain"
-        style={{
-          padding: 22,
-          border: "2px solid #1a1a1a",
-          borderRadius: 14,
-        }}
-      >
-        <div className="section-title">Cómo funciona</div>
-        <div
-          className="t-hand"
-          style={{ fontSize: 15, color: "var(--ink-2)", lineHeight: 1.6 }}
-        >
-          Vercel Cron corre cada 15 minutos. Para cada remitente de la lista, busca
-          mails nuevos desde el último scan y los manda a <strong>Claude Haiku</strong> que
-          extrae proveedor, monto, vencimiento y categoría. Los gastos quedan en{" "}
-          <span className="chip yellow">pendiente aprobar</span> (o auto-aprobados si tildaste
-          "auto"). Tocando <em>Escanear ahora</em> disparás el scan de forma manual.
+        <div className="v2-grid v2-grid-admin">
+          {/* Reglas */}
+          <div className="v2-card" style={{ padding: 0 }}>
+            <div
+              style={{
+                padding: "16px 20px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <div>
+                <div className="v2-card-title">Reglas de parsing</div>
+                <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                  {(rules ?? []).length} activas · cada 15min el cron las corre
+                </div>
+              </div>
+            </div>
+
+            <form
+              action={addRule}
+              style={{
+                padding: "14px 20px",
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr) auto auto",
+                gap: 8,
+                alignItems: "center",
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <input
+                name="sender"
+                placeholder="e-resumen@banco.com.ar"
+                required
+                className="v2-input"
+                style={{ fontFamily: "var(--mono)", fontSize: 12 }}
+              />
+              <input
+                name="provider"
+                placeholder="Proveedor (opcional)"
+                className="v2-input"
+              />
+              <select name="category" defaultValue="servicios" className="v2-select">
+                {Object.entries(CATEGORIAS).map(([k, c]) => (
+                  <option key={k} value={k}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <label
+                style={{
+                  fontSize: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  color: "var(--text-3)",
+                }}
+              >
+                <input type="checkbox" name="auto_approve" /> auto
+              </label>
+              <button type="submit" className="v2-btn primary">
+                <Icon.plus /> Agregar
+              </button>
+            </form>
+
+            {!rules || rules.length === 0 ? (
+              <div style={{ padding: 20, color: "var(--text-3)", fontSize: 13 }}>
+                No hay reglas todavía. Agregá remitentes arriba o aceptá sugerencias.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="v2-table">
+                  <thead>
+                    <tr>
+                      <th>Remitente</th>
+                      <th>Proveedor</th>
+                      <th>Categoría</th>
+                      <th>Auto</th>
+                      <th style={{ textAlign: "right" }}>Usos</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rules.map((r) => {
+                      const cat = (r.category_id ?? "servicios") as CategoriaKey;
+                      const catInfo = CATEGORIAS[cat];
+                      return (
+                        <tr key={r.id}>
+                          <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+                            {r.sender_pattern}
+                          </td>
+                          <td style={{ fontWeight: 500 }}>{r.provider ?? "—"}</td>
+                          <td>
+                            <span className="v2-badge">
+                              <span
+                                className="v2-cat-dot"
+                                style={{ background: CAT_COLOR[cat] ?? "#737373" }}
+                              />
+                              {catInfo.label}
+                            </span>
+                          </td>
+                          <td>
+                            <Toggle on={!!r.auto_approve} />
+                          </td>
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontFamily: "var(--mono)",
+                              fontSize: 12,
+                            }}
+                          >
+                            {r.hits ?? 0}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <form action={removeRule}>
+                              <input type="hidden" name="id" value={r.id} />
+                              <button
+                                type="submit"
+                                className="v2-btn sm ghost"
+                                title="Eliminar"
+                              >
+                                <Icon.trash />
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Presupuestos */}
+          <div className="v2-card">
+            <div className="v2-card-header">
+              <div className="v2-card-title">Presupuestos mensuales</div>
+            </div>
+            <form
+              action={setBudget}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr) auto",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <select name="category" defaultValue="servicios" className="v2-select">
+                {Object.entries(CATEGORIAS).map(([k, c]) => (
+                  <option key={k} value={k}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="amount"
+                type="number"
+                min="0"
+                step="1000"
+                placeholder="ARS"
+                required
+                className="v2-input"
+              />
+              <button type="submit" className="v2-btn primary">
+                Guardar
+              </button>
+            </form>
+
+            {!budgets || budgets.length === 0 ? (
+              <div style={{ color: "var(--text-3)", fontSize: 13 }}>Sin presupuestos.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {budgets
+                  .slice()
+                  .sort((a, b) => (a.category_id ?? "").localeCompare(b.category_id ?? ""))
+                  .map((b) => {
+                    const cat = (b.category_id ?? "servicios") as CategoriaKey;
+                    const catInfo = CATEGORIAS[cat];
+                    const budget = b.amount_cents / 100;
+                    const spent = spentByCat[cat] ?? 0;
+                    const pct = Math.min(100, (spent / budget) * 100);
+                    const over = spent > budget;
+                    const color = over
+                      ? "var(--red)"
+                      : pct >= 80
+                        ? "var(--amber)"
+                        : CAT_COLOR[cat] ?? "var(--text)";
+                    return (
+                      <div key={b.id}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: 5,
+                            gap: 8,
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              fontSize: 12.5,
+                              fontWeight: 500,
+                            }}
+                          >
+                            <span
+                              className="v2-cat-dot"
+                              style={{ background: CAT_COLOR[cat] ?? "#737373" }}
+                            />
+                            {catInfo.label}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              color: "var(--text-3)",
+                              fontVariantNumeric: "tabular-nums",
+                              flex: 1,
+                              textAlign: "right",
+                            }}
+                          >
+                            {fmtARS(spent)} / {fmtARS(budget)}
+                          </span>
+                          <form action={removeBudget}>
+                            <input type="hidden" name="id" value={b.id} />
+                            <button
+                              type="submit"
+                              className="v2-btn sm ghost"
+                              style={{ padding: "2px 6px" }}
+                              title="Eliminar"
+                            >
+                              <Icon.x />
+                            </button>
+                          </form>
+                        </div>
+                        <div className="v2-progress">
+                          <div style={{ width: pct + "%", background: color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
