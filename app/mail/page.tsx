@@ -95,7 +95,7 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
                 flexWrap: "wrap",
               }}
             >
-              <div className="v2-card-title">Inbox escaneado</div>
+              <div className="v2-card-title">Scan de Gastos</div>
               <div className="v2-seg">
                 {FILTERS.map((f) => (
                   <Link
