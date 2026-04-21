@@ -146,9 +146,26 @@ export type ManualExtracted = {
 
 const MANUAL_SYSTEM_PROMPT = `Sos un parser de gastos personales. El usuario te escribe en español (Argentina) en lenguaje natural y tu tarea es extraer estructura.
 
-DETECTÁS LA INTENCIÓN:
-- "past": ya lo gastó (ej: "gasté", "compré", "pagué", "salió")
-- "future": es un gasto pendiente/recordatorio (ej: "tengo que pagar", "me toca", "vence", "recordame")
+DETECTÁS LA INTENCIÓN (regla más importante — no te equivoques):
+
+1. Si el INPUT es UN ARCHIVO (PDF/foto de comprobante/resumen/ticket):
+   → DEFAULT: intent="past" (el usuario está subiendo un comprobante de algo que YA PAGÓ)
+   → Solo intent="future" si el documento explícitamente dice "saldo impago", "pendiente de pago" Y el vencimiento es en el FUTURO
+
+2. Si el INPUT es TEXTO con verbo claro:
+   - "past": gasté, compré, pagué, salió, abonó, aboné, cancelé, tuve que pagar, se fue
+   - "future": tengo que pagar (no pagué todavía), me toca, vence, recordame, acordate
+
+3. Comparación contra fecha ACTUAL (${new Date().toISOString().slice(0, 10)}):
+   - Si la fecha mencionada (due_date o period_month) ya pasó → intent="past" (no importa cómo esté formulado)
+   - Si la fecha es futura → intent="future" solo si el texto implica que aún no se pagó
+
+EJEMPLOS:
+- PDF "Resumen Visa Febrero 2026" subido en abril → intent=past (el periodo ya terminó)
+- Foto de ticket del super → intent=past (siempre)
+- Texto "vence el 25 de luz" sin verbo pasado → intent=future
+- Texto "pagué el 25 de luz" → intent=past
+- Texto "hay que pagar la luz" → intent=future
 
 AMOUNTS:
 - "50 lucas" = 50000 ARS
@@ -249,8 +266,8 @@ export async function extractAttachmentExpense(
   userCaption?: string,
 ): Promise<ManualExtracted> {
   const instruction = userCaption
-    ? `El usuario agrega: "${userCaption}". Extraé el gasto del archivo adjunto.`
-    : "Analizá este comprobante/factura/ticket/resumen/recibo y extraé el gasto que muestra.";
+    ? `El usuario agrega: "${userCaption}". Extraé el gasto del archivo adjunto. Por defecto intent="past" (el usuario sube el comprobante DESPUÉS de pagar).`
+    : 'Analizá este comprobante/factura/ticket/resumen/recibo y extraé el gasto que muestra. El usuario lo está subiendo DESPUÉS de pagarlo, entonces intent="past" salvo que el documento explícitamente indique que es una factura pendiente con vencimiento futuro.';
 
   const response = await anthropic().messages.create({
     model: "claude-haiku-4-5-20251001",
