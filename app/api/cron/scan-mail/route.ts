@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
     const since = acc.last_scan_at
       ? Math.floor(new Date(acc.last_scan_at).getTime() / 1000)
-      : Math.floor(now.getTime() / 1000) - 60 * 60 * 24;
+      : Math.floor(now.getTime() / 1000) - 60 * 60 * 24 * 7;
 
     const errors: string[] = [];
     let mails: RawMail[] = [];

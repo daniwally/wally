@@ -60,7 +60,7 @@ export async function fetchRecentMails(
 ): Promise<RawMail[]> {
   const gmail = gmailClient(refreshToken);
 
-  const query = `after:${sinceUnixSec} -in:spam -in:trash -category:promotions -category:social`;
+  const query = `after:${sinceUnixSec} -in:spam -in:trash`;
 
   const list = await gmail.users.messages.list({
     userId: "me",
