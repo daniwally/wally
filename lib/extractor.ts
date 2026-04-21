@@ -190,18 +190,29 @@ CATEGORÍAS:
 - familia: cuotas escolares/universidad, obra social, pediatra, cumpleaños familiares, regalos a familiares, actividades de hijos, campamentos, material escolar
 - calu: gastos de la mascota Calu — veterinario, alimento mascota, accesorios, peluquería canina, guardería
 
-PERIODO MENSUAL — usar en CUALQUIER gasto que corresponda a un mes específico:
-- Resúmenes de tarjeta (Visa/Master/Amex): suelen llegar al mes siguiente. "Resumen Visa Febrero 2026" → period_month="2026-02".
-- Cuotas escolares/universidad: "Cuota Marzo", "Arancel Abril 2026" → period_month del mes de la cuota.
-- Servicios mensuales: "Factura Edenor Febrero", "Gas Metrogas Marzo" → mes del periodo.
-- Suscripciones mensuales con mes explícito (ej "Netflix Febrero 2026"): mes nombrado.
-- Expensas de consorcio: "Expensas Abril 2026" → mes nombrado.
-- Impuestos mensuales: "ABL Marzo 2026" → mes nombrado.
+PERIODO MENSUAL (period_month) — regla PRINCIPAL:
 
-Reglas:
-- Formato YYYY-MM (ej "2026-03")
-- En \`concept\` incluí el mes/periodo legible (ej "Cuota Colegio - Marzo 2026")
-- Si es un gasto único sin mes asociado (compra en super, compra retail, etc.) → period_month=null
+El period_month representa **cuándo SALE la plata del usuario**, no el mes del servicio futuro.
+
+1. Resúmenes de tarjeta de crédito: el periodo = mes de los consumos (pasado).
+   Ejemplo: "Resumen Visa Febrero 2026" llegó en marzo → period_month="2026-02" (los consumos fueron en feb).
+
+2. Facturas de servicios pasados (luz, gas, agua): period_month = mes de consumo cubierto.
+   Ejemplo: "Factura Edenor Marzo" emitida en abril → period_month="2026-03".
+
+3. Facturas FORWARD-BILLED (colegio, gym, alquiler del mes entrante, suscripciones pre-pagas):
+   IMPORTANTE: period_month = **mes de la FECHA DE EMISIÓN o VENCIMIENTO**, NO el mes del servicio futuro.
+   Ejemplo: Cuota escolar "Marzo 2026" emitida el 19/2 → period_month="2026-02" (la plata sale en febrero).
+   Ejemplo: Gym "Abril" pagado en marzo → period_month="2026-03".
+
+4. Expensas de consorcio: period_month = mes en que se cobra (típicamente el mes actual del pago).
+
+5. Compras puntuales (super, retail, resto): period_month=null (no hay periodo, es fecha puntual).
+
+Rule of thumb: si dudás, period_month = mes en que el usuario efectivamente paga/pagó, no el mes al que corresponde el servicio.
+
+- Formato YYYY-MM
+- En \`concept\` incluí el periodo legible del servicio (ej "Cuota Colegio - Marzo 2026"), pero el period_month puede ser distinto.
 
 DUE_DATE (fecha del gasto — semántica depende del intent):
 - Si intent=past: la fecha EN QUE se realizó el gasto (ej: "gasté 50k ayer", "el 15 de marzo pagué...", "la semana pasada")

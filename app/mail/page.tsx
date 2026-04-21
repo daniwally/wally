@@ -12,6 +12,7 @@ import {
   revertExpense,
   deleteExpense,
   changeCategory,
+  changePaidAt,
 } from "../actions";
 import { triggerScan } from "../admin/actions";
 import { ScanButton } from "@/components/v2/ScanButton";
@@ -283,11 +284,68 @@ function DetailPanel({ expense }: { expense: Expense }) {
           v={expense.due_at ? fmtDateShort(expense.due_at) : "—"}
           conf={expense.confidence_due}
         />
-        <Extract label="Categoría" v={catInfo.label} conf={null} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 100, color: "var(--text-3)", fontSize: 12 }}>Categoría</span>
+          <form
+            action={changeCategory}
+            style={{ flex: 1, display: "flex", gap: 6, alignItems: "center" }}
+          >
+            <input type="hidden" name="id" value={expense.id} />
+            <select
+              name="category"
+              defaultValue={cat}
+              className="v2-select"
+              style={{ flex: 1, fontSize: 12, padding: "4px 8px" }}
+            >
+              {Object.entries(CATEGORIAS).map(([k, c]) => (
+                <option key={k} value={k}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="v2-btn sm ghost" title="Cambiar categoría">
+              ✓
+            </button>
+          </form>
+        </div>
         <Extract label="Estado" v={statusChip(expense.status as Status).label} conf={null} />
       </div>
 
       <hr className="v2-divider" style={{ margin: "18px 0 14px" }} />
+
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--text-3)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 500,
+          marginBottom: 10,
+        }}
+      >
+        Fecha (en qué mes cuenta)
+      </div>
+      <form
+        action={changePaidAt}
+        style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 14 }}
+      >
+        <input type="hidden" name="id" value={expense.id} />
+        <input
+          type="date"
+          name="date"
+          defaultValue={
+            (expense.paid_at
+              ? new Date(expense.paid_at).toISOString().slice(0, 10)
+              : expense.due_at ?? "") as string
+          }
+          className="v2-input"
+          style={{ fontSize: 12, padding: "6px 8px", flex: 1 }}
+        />
+        <button type="submit" className="v2-btn sm ghost" title="Usar esta fecha como pagado">
+          ✓
+        </button>
+      </form>
+
       <div
         style={{
           fontSize: 12,

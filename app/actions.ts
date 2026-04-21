@@ -195,6 +195,25 @@ export async function revertExpense(formData: FormData) {
   revalidatePath("/pendientes");
 }
 
+export async function changePaidAt(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  const date = String(formData.get("date") || ""); // YYYY-MM-DD
+  if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+
+  await supabase()
+    .from("expenses")
+    .update({
+      paid_at: new Date(date + "T12:00:00Z").toISOString(),
+      status: "paid",
+      paid_via: "Dashboard (fecha manual)",
+    })
+    .eq("id", id)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/");
+  revalidatePath("/mail");
+  revalidatePath("/pendientes");
+}
+
 export async function changeCategory(formData: FormData) {
   const id = String(formData.get("id") || "");
   const category = String(formData.get("category") || "");
