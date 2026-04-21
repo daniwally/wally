@@ -67,6 +67,54 @@ export async function setBudget(formData: FormData) {
   revalidatePath("/");
 }
 
+export async function createRuleFromExpense(formData: FormData) {
+  const expenseId = String(formData.get("expense_id") || "");
+  if (!expenseId) return;
+
+  const { data: expense } = await supabase()
+    .from("expenses")
+    .select("source_from, provider, category_id")
+    .eq("id", expenseId)
+    .eq("user_id", WALLY_USER_ID)
+    .single();
+
+  if (!expense?.source_from) return;
+
+  // Extraer email puro del "Name <email@domain>" format
+  const match = expense.source_from.match(/<([^>]+)>/);
+  const senderEmail = match ? match[1] : expense.source_from.trim();
+
+  const { data: existing } = await supabase()
+    .from("rules")
+    .select("id")
+    .eq("user_id", WALLY_USER_ID)
+    .eq("sender_pattern", senderEmail)
+    .maybeSingle();
+
+  if (!existing) {
+    await supabase()
+      .from("rules")
+      .insert({
+        user_id: WALLY_USER_ID,
+        sender_pattern: senderEmail,
+        provider: expense.provider,
+        category_id: expense.category_id,
+        auto_approve: false,
+        active: true,
+      });
+  }
+
+  // Vincular el expense actual (y futuros con mismo source) a la nueva rule
+  await supabase()
+    .from("expenses")
+    .update({ rule_id: existing?.id })
+    .eq("source_from", expense.source_from)
+    .eq("user_id", WALLY_USER_ID);
+
+  revalidatePath("/admin");
+  revalidatePath("/mail");
+}
+
 export async function removeBudget(formData: FormData) {
   const id = String(formData.get("id") || "");
   if (!id) return;

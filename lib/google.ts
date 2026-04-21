@@ -53,6 +53,62 @@ export type RawMail = {
   received_at: string;
 };
 
+const FINANCE_KEYWORDS = [
+  "factura",
+  "pago",
+  "pagar",
+  "resumen",
+  "vencimiento",
+  "saldo",
+  "debito",
+  "cobro",
+  "renovacion",
+  "suscripcion",
+  "recibo",
+  "invoice",
+  "receipt",
+  "payment",
+  "subscription",
+  "\"total a pagar\"",
+];
+
+export async function fetchGeneralInbox(
+  refreshToken: string,
+  sinceUnixSec: number,
+  maxResults = 25,
+): Promise<RawMail[]> {
+  const gmail = gmailClient(refreshToken);
+
+  const sinceDate = new Date(sinceUnixSec * 1000);
+  const y = sinceDate.getUTCFullYear();
+  const m = String(sinceDate.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(sinceDate.getUTCDate()).padStart(2, "0");
+
+  const keywordClause = `(${FINANCE_KEYWORDS.join(" OR ")})`;
+  const query = `${keywordClause} after:${y}/${m}/${d} -in:spam -in:trash`;
+
+  const list = await gmail.users.messages.list({
+    userId: "me",
+    q: query,
+    maxResults,
+  });
+
+  const ids = list.data.messages?.map((m) => m.id!) ?? [];
+
+  const mails = await Promise.all(
+    ids.map(async (id) => {
+      const msg = await gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "full",
+      });
+      return parseMessage(msg.data);
+    }),
+  );
+
+  return mails.filter((m): m is RawMail => m !== null);
+}
+
 export async function fetchMailsBySender(
   refreshToken: string,
   senderPattern: string,

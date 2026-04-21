@@ -1,7 +1,14 @@
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
-import { addRule, removeRule, triggerScan, setBudget, removeBudget } from "./actions";
+import {
+  addRule,
+  removeRule,
+  triggerScan,
+  setBudget,
+  removeBudget,
+  createRuleFromExpense,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +26,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
     { data: rules },
     { data: budgets },
     { data: paidThisMonth },
+    { data: unruledExpenses },
   ] = await Promise.all([
     supabase()
       .from("accounts")
@@ -41,7 +49,35 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       .eq("user_id", WALLY_USER_ID)
       .in("status", ["paid", "auto_approved", "pending_approval"])
       .or(`and(paid_at.gte.${monthStart},paid_at.lt.${monthEnd}),and(paid_at.is.null,detected_at.gte.${monthStart},detected_at.lt.${monthEnd})`),
+    supabase()
+      .from("expenses")
+      .select("id, provider, concept, amount_cents, currency, category_id, source_from, detected_at")
+      .eq("user_id", WALLY_USER_ID)
+      .is("rule_id", null)
+      .in("status", ["pending_approval"])
+      .order("detected_at", { ascending: false }),
   ]);
+
+  // Agrupar sugerencias por source_from → un botón "crear regla" por remitente
+  const suggestionsBySender = new Map<
+    string,
+    {
+      sender: string;
+      count: number;
+      expenses: Array<{ id: string; provider: string; amount_cents: number; currency: string; category_id: string | null }>;
+    }
+  >();
+  (unruledExpenses ?? []).forEach((e) => {
+    const from = e.source_from ?? "desconocido";
+    const existing = suggestionsBySender.get(from);
+    if (existing) {
+      existing.count++;
+      existing.expenses.push(e);
+    } else {
+      suggestionsBySender.set(from, { sender: from, count: 1, expenses: [e] });
+    }
+  });
+  const suggestions = Array.from(suggestionsBySender.values());
 
   const spentByCat: Record<string, number> = {};
   (paidThisMonth ?? [])
@@ -324,6 +360,95 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
           </div>
         )}
       </div>
+
+      {/* Sugerencias: remitentes detectados sin regla */}
+      {suggestions.length > 0 && (
+        <div
+          className="paper-plain"
+          style={{
+            padding: 22,
+            border: "2px solid #1a1a1a",
+            borderRadius: 14,
+            marginBottom: 20,
+            background: "linear-gradient(180deg, var(--paper) 0%, rgba(199,219,239,0.3) 100%)",
+          }}
+        >
+          <div style={{ marginBottom: 14 }}>
+            <div className="section-title">✨ Sugerencias del bot</div>
+            <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-3)" }}>
+              Claude detectó gastos de remitentes que{" "}
+              <span className="hl-blue">no están en tu lista</span>. Convertilos en reglas con un
+              click para auto-procesarlos.
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {suggestions.map((s) => {
+              const first = s.expenses[0];
+              const cat = (first.category_id ?? "servicios") as CategoriaKey;
+              const catInfo = CATEGORIAS[cat];
+
+              return (
+                <div
+                  key={s.sender}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "12px 14px",
+                    border: "1.5px solid var(--ink)",
+                    borderRadius: 10,
+                    background: "var(--blue-soft)",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: "50% 40% 50% 45%",
+                      background: catInfo.soft,
+                      border: "2px solid var(--ink)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 16,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {catInfo.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      className="t-mono"
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-3)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {s.sender}
+                    </div>
+                    <div className="t-hand" style={{ fontSize: 15, fontWeight: 700 }}>
+                      {first.provider}{" "}
+                      <span className="t-hand" style={{ fontWeight: 400, color: "var(--ink-3)" }}>
+                        · {s.count} gasto{s.count > 1 ? "s" : ""} detectado{s.count > 1 ? "s" : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <form action={createRuleFromExpense}>
+                    <input type="hidden" name="expense_id" value={first.id} />
+                    <button type="submit" className="btn-sketch primary">
+                      + crear regla
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Presupuestos */}
       <div

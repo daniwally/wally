@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
-import { fetchMailsBySender } from "@/lib/google";
+import { fetchMailsBySender, fetchGeneralInbox } from "@/lib/google";
 import { extractExpense } from "@/lib/extractor";
 import { notifyNewExpense } from "@/lib/notify";
 
@@ -13,6 +13,14 @@ type RuleResult = {
   matched: number;
   processed: number;
   detected: number;
+  errors: string[];
+};
+
+type GeneralResult = {
+  matched: number;
+  processed: number;
+  detected: number;
+  skipped_known: number;
   errors: string[];
 };
 
@@ -43,15 +51,12 @@ export async function GET(req: Request) {
   if (!accounts?.length) {
     return NextResponse.json({ ok: true, message: "no accounts connected" });
   }
-  if (!rules?.length) {
-    return NextResponse.json({ ok: true, message: "no rules configured — add senders in /admin" });
-  }
-
   const now = new Date();
   const accountResults: Array<{
     account: string;
     last_scan_since: string;
     rules: RuleResult[];
+    general: GeneralResult;
     total_detected: number;
   }> = [];
 
@@ -65,7 +70,7 @@ export async function GET(req: Request) {
     const ruleResults: RuleResult[] = [];
     let totalDetected = 0;
 
-    for (const rule of rules) {
+    for (const rule of rules ?? []) {
       const errors: string[] = [];
       let matched = 0;
       let processed = 0;
@@ -169,6 +174,95 @@ export async function GET(req: Request) {
       });
     }
 
+    // Segunda pasada: inbox general con keywords financieros
+    const generalResult: GeneralResult = {
+      matched: 0,
+      processed: 0,
+      detected: 0,
+      skipped_known: 0,
+      errors: [],
+    };
+
+    try {
+      const generalMails = await fetchGeneralInbox(acc.oauth_refresh_token, sinceSec, 25);
+      generalResult.matched = generalMails.length;
+
+      for (const mail of generalMails) {
+        const { data: existing } = await supabase()
+          .from("expenses")
+          .select("id")
+          .eq("source_message_id", mail.id)
+          .limit(1);
+        if (existing && existing.length > 0) {
+          generalResult.skipped_known++;
+          continue;
+        }
+
+        generalResult.processed++;
+
+        try {
+          const extracted = await extractExpense(mail);
+          if (!extracted.is_expense || !extracted.amount) continue;
+
+          const amountCents = Math.round(extracted.amount * 100);
+
+          const { data: inserted, error: insertErr } = await supabase()
+            .from("expenses")
+            .insert({
+              user_id: WALLY_USER_ID,
+              account_id: acc.id,
+              rule_id: null,
+              provider: extracted.provider ?? "Desconocido",
+              concept: extracted.concept,
+              amount_cents: amountCents,
+              currency: extracted.currency ?? "ARS",
+              category_id: extracted.category,
+              due_at: extracted.due_date,
+              status: "pending_approval",
+              confidence_provider: extracted.confidence,
+              confidence_amount: extracted.confidence,
+              confidence_due: extracted.confidence,
+              source_message_id: mail.id,
+              source_from: mail.from,
+              raw_extract_json: extracted,
+            })
+            .select("id")
+            .single();
+
+          if (insertErr || !inserted) {
+            generalResult.errors.push(`insert: ${insertErr?.message ?? "unknown"}`);
+            continue;
+          }
+          generalResult.detected++;
+          totalDetected++;
+
+          try {
+            await notifyNewExpense({
+              id: inserted.id,
+              provider: extracted.provider ?? "Desconocido",
+              concept: extracted.concept,
+              amount_cents: amountCents,
+              currency: (extracted.currency ?? "ARS") as "ARS" | "USD",
+              category_id: extracted.category,
+              due_at: extracted.due_date,
+              source_from: mail.from,
+              confidence_amount: extracted.confidence,
+            });
+          } catch (e) {
+            generalResult.errors.push(
+              `notify: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        } catch (e) {
+          generalResult.errors.push(
+            `extract: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+    } catch (e) {
+      generalResult.errors.push(`fetch: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     await supabase()
       .from("accounts")
       .update({ last_scan_at: now.toISOString() })
@@ -178,6 +272,7 @@ export async function GET(req: Request) {
       account: acc.account,
       last_scan_since: new Date(sinceSec * 1000).toISOString(),
       rules: ruleResults,
+      general: generalResult,
       total_detected: totalDetected,
     });
   }
