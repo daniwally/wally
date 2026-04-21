@@ -1,7 +1,7 @@
 import { type CategoriaKey, CATEGORIAS } from "@/lib/mock-data";
-import { fmtARS } from "@/lib/format";
+import { fmtARS, fmtMoney } from "@/lib/format";
 import { getDashboardData } from "@/lib/data";
-import { CAT_COLOR, Icon } from "@/components/Icon";
+import { CAT_COLOR, CAT_ICON, Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { KPI } from "@/components/v2/KPI";
 import { LineChart } from "@/components/v2/LineChart";
@@ -523,6 +523,139 @@ export default async function DashboardPage({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Listado de gastos del mes */}
+        <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>
+          <div
+            style={{
+              padding: "16px 20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              borderBottom: "1px solid var(--border)",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <div>
+              <div className="v2-card-title">Gastos de {selMonthLabel.toLowerCase()}</div>
+              <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                {pagados.length} {pagados.length === 1 ? "gasto" : "gastos"} pagados · total{" "}
+                {fmtARS(totalArsMes)}
+              </div>
+            </div>
+            <Link href="/mail?filter=paid" className="v2-btn">
+              Ver todos
+            </Link>
+          </div>
+
+          {pagados.length === 0 ? (
+            <div
+              style={{
+                padding: "30px 20px",
+                fontSize: 13,
+                color: "var(--text-3)",
+                textAlign: "center",
+              }}
+            >
+              Todavía no hay gastos pagados en {selMonthLabel.toLowerCase()}. A medida que
+              apruebes pendientes o subas manualmente, aparecen acá.
+            </div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table className="v2-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 70 }}>Fecha</th>
+                    <th>Proveedor</th>
+                    <th>Concepto</th>
+                    <th>Categoría</th>
+                    <th style={{ textAlign: "right" }}>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagados
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        new Date(b.paid_at ?? 0).getTime() -
+                        new Date(a.paid_at ?? 0).getTime(),
+                    )
+                    .map((e) => {
+                      const cat = (e.category_id ?? "servicios") as CategoriaKey;
+                      const catInfo = CATEGORIAS[cat];
+                      const IconEl = CAT_ICON[cat] ?? CAT_ICON.servicios;
+                      const dateStr = e.paid_at
+                        ? new Date(e.paid_at).toLocaleDateString("es-AR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                          })
+                        : "—";
+                      return (
+                        <tr key={e.id}>
+                          <td
+                            style={{
+                              fontFamily: "var(--mono)",
+                              fontSize: 12,
+                              color: "var(--text-3)",
+                            }}
+                          >
+                            {dateStr}
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <span
+                                className="v2-avatar"
+                                style={{
+                                  background: "var(--surface-2)",
+                                  color: CAT_COLOR[cat] ?? "#737373",
+                                  width: 26,
+                                  height: 26,
+                                }}
+                              >
+                                <IconEl />
+                              </span>
+                              <span style={{ fontSize: 13, fontWeight: 500 }}>{e.provider}</span>
+                            </div>
+                          </td>
+                          <td
+                            style={{
+                              fontSize: 12.5,
+                              color: "var(--text-2)",
+                              maxWidth: 320,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {e.concept ?? "—"}
+                          </td>
+                          <td>
+                            <span className="v2-badge">
+                              <span
+                                className="v2-cat-dot"
+                                style={{ background: CAT_COLOR[cat] ?? "#737373" }}
+                              />
+                              {catInfo.label}
+                            </span>
+                          </td>
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontWeight: 500,
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            {fmtMoney(e.amount_cents / 100, e.currency as "ARS" | "USD")}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </>
