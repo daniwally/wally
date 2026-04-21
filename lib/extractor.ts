@@ -51,16 +51,14 @@ Amount: en unidades (no centavos). Ej: 24580 significa $24.580 ARS o US$24.580 s
 Confidence: 0-100 según qué tan seguro estás de la extracción.
 
 RESÚMENES DE TARJETA DE CRÉDITO — regla importante:
-El resumen de una tarjeta normalmente llega **al mes siguiente** del periodo cubierto:
-- Un resumen recibido en marzo suele cubrir gastos de FEBRERO
-- Un resumen recibido en abril cubre MARZO
-- etc.
+period_month = mes de la **FECHA DE VENCIMIENTO** (cuando el usuario paga la tarjeta), NO el mes del consumo ni el nombre del resumen.
 
-Para estos casos:
-1. Detectá el periodo real del resumen leyendo el cuerpo del mail (suele decir "Periodo", "Del X al Y", "Resumen de Febrero", "Mes: FEBRERO 2026", etc)
-2. Si no lo dice explícito, asumí: periodo = mes anterior al de recepción del mail
-3. Completá \`period_month\` en formato YYYY-MM (ej "2026-02" para febrero 2026)
-4. En \`concept\` incluí el periodo legible (ej "Resumen Visa - Febrero 2026")
+Por qué: el usuario piensa "esto sale de mi bolsillo en el mes del vencimiento". El nombre del resumen ("Resumen Enero") o el rango de consumos (24-dic al 22-ene) son irrelevantes para el aggregate mensual.
+
+Pasos:
+1. Buscá la fecha de vencimiento (due_date) en el resumen — suele decir "Vence el X", "Fecha de pago", "Vencimiento".
+2. period_month = año-mes de esa fecha. Ej: venc. 2-feb-2026 → period_month="2026-02". Venc. 1-abr-2026 → "2026-04".
+3. En \`concept\` podés incluir el nombre original del resumen para referencia ("Resumen Visa Enero 2026 - venc. feb").
 5. \`due_date\` sigue siendo la fecha límite de pago impresa en el resumen (NO confundir con periodo)
 
 Para NO-tarjetas (facturas luz, expensas, compras, suscripciones) → \`period_month: null\`.`;
