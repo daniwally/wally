@@ -5,15 +5,26 @@ import {
   editMessageText,
   answerCallbackQuery,
   escapeMd,
+  fmtARSForTg,
+  fmtUSDForTg,
 } from "@/lib/telegram";
+import { extractManualExpense, extractAttachmentExpense, type ManualExtracted } from "@/lib/extractor";
+import { downloadTelegramFile } from "@/lib/telegram";
+import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
+
+type TgPhotoSize = { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number };
+type TgDocument = { file_id: string; file_unique_id: string; file_name?: string; mime_type?: string; file_size?: number };
 
 type TgMessage = {
   message_id: number;
   chat: { id: number };
   from: { id: number; username?: string; first_name?: string };
   text?: string;
+  caption?: string;
+  photo?: TgPhotoSize[];
+  document?: TgDocument;
 };
 
 type TgCallbackQuery = {
@@ -53,6 +64,32 @@ export async function POST(req: Request) {
 async function handleMessage(msg: TgMessage) {
   const text = msg.text?.trim() ?? "";
   const chatId = msg.chat.id;
+
+  // Foto del comprobante
+  if (msg.photo && msg.photo.length > 0) {
+    await handleAttachment(
+      chatId,
+      msg.photo[msg.photo.length - 1].file_id,
+      msg.caption,
+      "image",
+    );
+    return;
+  }
+
+  // Documento (PDF o imagen como archivo)
+  if (msg.document) {
+    const mime = msg.document.mime_type ?? "";
+    if (mime.startsWith("image/") || mime === "application/pdf") {
+      await handleAttachment(chatId, msg.document.file_id, msg.caption, mime);
+      return;
+    }
+    await sendMessage(
+      chatId,
+      `No puedo procesar tipo de archivo: ${escapeMd(mime)}\\. Mandame imagen o PDF\\.`,
+      { parse_mode: "MarkdownV2" },
+    );
+    return;
+  }
 
   if (text === "/start" || text === "/connect") {
     await supabase()
@@ -111,13 +148,165 @@ async function handleMessage(msg: TgMessage) {
   if (text === "/help") {
     await sendMessage(
       chatId,
-      "Soy el bot de *wally gastos*\\. Comandos: /start /status /help",
+      [
+        "Soy el bot de *wally gastos* 🧾",
+        "",
+        "*Comandos:*",
+        "• /status \\- pendientes de aprobar",
+        "• /start \\- reconectar",
+        "",
+        "*Registrar gasto manual:*",
+        "Escribime en lenguaje normal, ej:",
+        "• _gasté 50 lucas en el super_",
+        "• _pagué $12\\.000 de nafta_",
+        "• _tengo que pagar 120k de luz el 25_",
+        "• _aws USD 40_",
+        "",
+        "Lo paso por Claude Haiku y lo registro\\.",
+      ].join("\n"),
       { parse_mode: "MarkdownV2" },
     );
     return;
   }
 
-  await sendMessage(chatId, "No entendí ese comando. Probá /help");
+  if (text.startsWith("/")) {
+    await sendMessage(chatId, "No entendí ese comando. Probá /help");
+    return;
+  }
+
+  // Texto libre → parsear como gasto manual con Claude
+  try {
+    const extracted = await extractManualExpense(text);
+    await handleExtracted(chatId, extracted, "texto libre");
+  } catch (e) {
+    await sendMessage(chatId, `Error procesando: ${e instanceof Error ? e.message : "unknown"}`);
+  }
+}
+
+async function handleAttachment(
+  chatId: number,
+  fileId: string,
+  caption: string | undefined,
+  mimeHint: string,
+) {
+  try {
+    await sendMessage(chatId, "🔍 Analizando imagen\\.\\.\\.", { parse_mode: "MarkdownV2" });
+
+    const { buffer, mimeType, sizeBytes } = await downloadTelegramFile(fileId);
+
+    const MAX_BYTES = 8 * 1024 * 1024;
+    if (sizeBytes > MAX_BYTES) {
+      await sendMessage(
+        chatId,
+        `Archivo muy grande (${Math.round(sizeBytes / 1024)}KB, max 8MB)`,
+      );
+      return;
+    }
+
+    const base64 = buffer.toString("base64");
+    const effectiveMime = mimeType !== "application/octet-stream" ? mimeType : mimeHint;
+
+    let extracted;
+    if (effectiveMime === "application/pdf") {
+      extracted = await extractAttachmentExpense(
+        {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: base64 },
+        },
+        caption,
+      );
+    } else if (
+      effectiveMime === "image/jpeg" ||
+      effectiveMime === "image/png" ||
+      effectiveMime === "image/gif" ||
+      effectiveMime === "image/webp"
+    ) {
+      extracted = await extractAttachmentExpense(
+        {
+          type: "image",
+          source: { type: "base64", media_type: effectiveMime, data: base64 },
+        },
+        caption,
+      );
+    } else {
+      await sendMessage(chatId, `Tipo no soportado: ${escapeMd(effectiveMime)}`, {
+        parse_mode: "MarkdownV2",
+      });
+      return;
+    }
+
+    await handleExtracted(chatId, extracted, effectiveMime === "application/pdf" ? "PDF" : "foto");
+  } catch (e) {
+    await sendMessage(chatId, `Error procesando: ${e instanceof Error ? e.message : "unknown"}`);
+  }
+}
+
+async function handleExtracted(
+  chatId: number,
+  extracted: ManualExtracted,
+  source: string,
+) {
+  if (!extracted.is_expense || !extracted.amount || !extracted.provider) {
+    await sendMessage(
+      chatId,
+      `No pude detectar un gasto${extracted.reason ? ": " + escapeMd(extracted.reason) : ""}`,
+      { parse_mode: "MarkdownV2" },
+    );
+    return;
+  }
+
+  const amountCents = Math.round(extracted.amount * 100);
+  const currency = extracted.currency ?? "ARS";
+  const isPast = extracted.intent === "past";
+
+  const { data: inserted, error: insertErr } = await supabase()
+    .from("expenses")
+    .insert({
+      user_id: WALLY_USER_ID,
+      provider: extracted.provider,
+      concept: extracted.concept,
+      amount_cents: amountCents,
+      currency,
+      category_id: extracted.category,
+      due_at: extracted.due_date,
+      paid_at: isPast ? new Date().toISOString() : null,
+      status: isPast ? "paid" : "pending_approval",
+      paid_via: isPast ? `Telegram (${source})` : null,
+      source_from: `telegram (${source})`,
+      confidence_provider: 100,
+      confidence_amount: 100,
+      confidence_due: extracted.due_date ? 90 : null,
+      raw_extract_json: extracted,
+    })
+    .select("id")
+    .single();
+
+  if (insertErr || !inserted) {
+    await sendMessage(chatId, `Error guardando: ${insertErr?.message ?? "?"}`);
+    return;
+  }
+
+  const cat = (extracted.category ?? "servicios") as CategoriaKey;
+  const catInfo = CATEGORIAS[cat];
+  const amountStr =
+    currency === "USD" ? fmtUSDForTg(extracted.amount) : fmtARSForTg(extracted.amount);
+
+  const lines = [
+    `${isPast ? "✅ Gasto registrado" : "⏰ Gasto futuro agendado"}`,
+    "",
+    `${catInfo.icon} *${escapeMd(extracted.provider)}*`,
+    extracted.concept ? `_${escapeMd(extracted.concept)}_` : "",
+    `💰 *${amountStr}* ${currency}`,
+  ];
+  if (extracted.due_date) {
+    lines.push(`📅 Vence: ${escapeMd(extracted.due_date)}`);
+  }
+  lines.push("", `_${escapeMd(catInfo.label)} · desde ${escapeMd(source)}_`);
+
+  await sendMessage(chatId, lines.filter(Boolean).join("\n"), {
+    parse_mode: "MarkdownV2",
+    inline_keyboard: [[{ text: "🗑 Borrar", callback_data: `delete:${inserted.id}` }]],
+  });
 }
 
 async function handleCallback(cb: TgCallbackQuery) {
@@ -128,6 +317,17 @@ async function handleCallback(cb: TgCallbackQuery) {
 
   if (!expenseId) {
     await answerCallbackQuery(cb.id, "Inválido");
+    return;
+  }
+
+  if (action === "delete") {
+    await supabase()
+      .from("expenses")
+      .delete()
+      .eq("id", expenseId)
+      .eq("user_id", WALLY_USER_ID);
+    await editMessageText(chatId, messageId, (cb.message.text ?? "") + "\n\n🗑 Borrado");
+    await answerCallbackQuery(cb.id, "🗑 Borrado");
     return;
   }
 

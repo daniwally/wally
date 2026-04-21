@@ -90,6 +90,36 @@ export async function getWebhookInfo() {
   return res.json();
 }
 
+export async function downloadTelegramFile(
+  fileId: string,
+): Promise<{ buffer: Buffer; mimeType: string; sizeBytes: number }> {
+  const token = botToken();
+
+  const fileInfoRes = await fetch(`${API_BASE}/bot${token}/getFile?file_id=${fileId}`);
+  const fileInfo = await fileInfoRes.json();
+  if (!fileInfo.ok) throw new Error(`getFile: ${fileInfo.description}`);
+
+  const filePath: string = fileInfo.result.file_path;
+
+  const fileRes = await fetch(`${API_BASE}/file/bot${token}/${filePath}`);
+  if (!fileRes.ok) throw new Error(`download failed: ${fileRes.status}`);
+  const arrayBuffer = await fileRes.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  const mimeType =
+    ({
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      pdf: "application/pdf",
+    } as Record<string, string>)[ext] ?? "application/octet-stream";
+
+  return { buffer, mimeType, sizeBytes: buffer.byteLength };
+}
+
 // MarkdownV2 escape — Telegram exige escape de caracteres especiales
 export function escapeMd(s: string): string {
   return s.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&");
