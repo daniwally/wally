@@ -637,7 +637,7 @@ export default async function AnalisisPage({
             )}
 
             {/* Reclasificador de merchants (aprende para futuros scans) */}
-            <MerchantReclassifier items={items} />
+            <MerchantReclassifier items={items} customTypes={customTypes} />
 
             {/* Categorías personalizadas */}
             <CustomTypesManager customTypes={customTypes} />

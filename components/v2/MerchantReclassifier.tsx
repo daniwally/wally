@@ -14,7 +14,19 @@ type ItemMin = {
   currency: string;
 };
 
-export function MerchantReclassifier({ items }: { items: ItemMin[] }) {
+type CustomType = {
+  slug: string;
+  label: string;
+  icon: string | null;
+};
+
+export function MerchantReclassifier({
+  items,
+  customTypes = [],
+}: {
+  items: ItemMin[];
+  customTypes?: CustomType[];
+}) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -47,10 +59,20 @@ export function MerchantReclassifier({ items }: { items: ItemMin[] }) {
     ? merchants.filter((m) => m.merchant.toLowerCase().includes(search.toLowerCase()))
     : merchants;
 
-  const merchantTypeOptions = Object.entries(MERCHANT_TYPE_META).map(([k, v]) => ({
-    value: k,
-    label: `${v.icon} ${v.label}`,
-  }));
+  const merchantTypeOptions = [
+    ...Object.entries(MERCHANT_TYPE_META).map(([k, v]) => ({
+      value: k,
+      label: `${v.icon} ${v.label}`,
+    })),
+    ...customTypes.map((c) => ({
+      value: c.slug,
+      label: `${c.icon ?? "·"} ${c.label}`,
+    })),
+  ].sort((a, b) => {
+    // Saca emojis/símbolos iniciales para ordenar por texto
+    const strip = (s: string) => s.replace(/^[\s·🏪🛒🍽️☕🛵⛽🚕🛣️🅿️💊🏥🎓👕📱🛍️📦🛋️🔧📺💻🎮🎭✈️🏨🗺️💄💪🐾⚡📡🛡️📋🏦💵🎁❤️👔📚🚗🎨]+/gu, "").trim();
+    return strip(a.label).localeCompare(strip(b.label), "es");
+  });
 
   return (
     <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>

@@ -123,7 +123,7 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
             </div>
           </div>
 
-          {/* Lista */}
+          {/* Lista (ordenada alfabéticamente) */}
           {customTypes.length === 0 ? (
             <div
               style={{
@@ -148,7 +148,9 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
                 </tr>
               </thead>
               <tbody>
-                {customTypes.map((t) => (
+                {[...customTypes]
+                  .sort((a, b) => a.label.localeCompare(b.label, "es"))
+                  .map((t) => (
                   <tr key={t.slug}>
                     <td style={{ fontSize: 18, textAlign: "center" }}>{t.icon ?? "·"}</td>
                     <td style={{ fontWeight: 500 }}>{t.label}</td>
@@ -182,7 +184,7 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
                       </form>
                     </td>
                   </tr>
-                ))}
+                  ))}
               </tbody>
             </table>
           )}
