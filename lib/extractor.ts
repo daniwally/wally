@@ -364,6 +364,48 @@ export async function extractAttachmentExpense(
 // Line-item extraction de resúmenes de tarjeta
 // ─────────────────────────────────────────────────────────────────
 
+// Tipos de comercio granulares, inspirados en Mint/YNAB/Personal Capital
+// adaptados a Argentina (supermercado, combustible, delivery, etc.)
+export type MerchantType =
+  | "supermercado"
+  | "restaurante"
+  | "cafeteria"
+  | "delivery_comida"
+  | "kiosco_almacen"
+  | "combustible"
+  | "transporte"
+  | "peaje"
+  | "estacionamiento"
+  | "farmacia"
+  | "salud"
+  | "educacion"
+  | "indumentaria"
+  | "electronica"
+  | "retail"
+  | "marketplace"
+  | "hogar_muebles"
+  | "ferreteria"
+  | "streaming"
+  | "saas"
+  | "gaming"
+  | "entretenimiento"
+  | "viajes_aereos"
+  | "hoteles"
+  | "turismo_local"
+  | "belleza"
+  | "gimnasio"
+  | "mascota"
+  | "servicios_publicos"
+  | "telecomunicaciones"
+  | "seguro"
+  | "impuesto"
+  | "banco_comisiones"
+  | "prestamo_cuota"
+  | "regalo"
+  | "donacion"
+  | "profesional_servicios"
+  | "otros";
+
 export type StatementItem = {
   merchant: string;
   merchant_raw: string | null;
@@ -373,6 +415,8 @@ export type StatementItem = {
   cuota_numero: number | null;
   cuota_total: number | null;
   category: CategoriaKeyStr | null;
+  merchant_type: MerchantType | null;
+  is_essential: boolean | null;
 };
 
 type CategoriaKeyStr =
@@ -412,7 +456,54 @@ NORMALIZACIÓN DE MERCHANT:
 - "AMAZON WEB SERVICES" → "AWS"
 - Usá mayúscula inicial y quitá códigos de procesadora (MERPAGO*, PAYU*, DL*DLOCAL*, etc.)
 
-CATEGORY sugerida por merchant:
+CATEGORY (broad): servicios, tarjeta, expensas, impuestos, compras, suscrip, debito, familia, calu, prestamo.
+
+MERCHANT_TYPE (granular — siempre completalo, usá el más específico):
+- supermercado: Coto, Carrefour, Jumbo, Disco, Dia, La Anónima, Vea, ChangoMás, Cooperativa
+- restaurante: restaurantes, parrillas, pizzerías, McDonalds/BurgerKing/otros FF si es en local
+- cafeteria: Starbucks, Havanna, cafeterías, panaderías
+- delivery_comida: Rappi, PedidosYa, GlovoFoods (apps de delivery)
+- kiosco_almacen: kioscos, chinos, mini-mercados
+- combustible: YPF, Shell, Axion, Puma, Petrobras, gas stations
+- transporte: Uber, Cabify, Didi, Remises, taxis, trenes, subte (SUBE)
+- peaje: Pago Fácil peajes, Telepase, peajes autopistas
+- estacionamiento: cocheras, parking
+- farmacia: Farmacity, Dr Ahorro, Farmapunto, cualquier farmacia
+- salud: consultas médicas, obra social, clínicas, lab análisis, dentista
+- educacion: colegios, universidades, cursos, libros educativos
+- indumentaria: ropa, zapatos, accesorios (Adidas, Zara, Cheeky, etc.)
+- electronica: Frávega, Garbarino, Apple, electro (Samsung, Noblex)
+- retail: tiendas genéricas, grandes tiendas, liquidaciones
+- marketplace: MercadoLibre, Amazon, Shopee, Tiendanube
+- hogar_muebles: Easy, Sodimac, muebles, decoración, Falabella
+- ferreteria: ferreterías, materiales construcción
+- streaming: Netflix, Spotify, Disney+, HBO, Crunchyroll, YouTube Premium
+- saas: AWS, Claude Pro, Figma, Notion, Adobe, Cursor, Lovable
+- gaming: Steam, PlayStation, Xbox, consolas
+- entretenimiento: cines, teatros, shows, eventos, juegos
+- viajes_aereos: aerolíneas, Despegar vuelos, Kiwi, airline reservations
+- hoteles: hoteles, Airbnb, Booking, Despegar hoteles
+- turismo_local: paseos, excursiones, alquiler autos turismo
+- belleza: peluquería, manicura, cosmética, spa, estética
+- gimnasio: gyms, SportsClub, crossfit, yoga studios
+- mascota: veterinarios, petshops, guardería canina
+- servicios_publicos: Edenor, Edesur, Metrogas, AySA, Cablevisión, internet, luz/gas/agua
+- telecomunicaciones: Personal, Claro, Movistar, Fibertel (celular/internet)
+- seguro: seguros auto/hogar/vida
+- impuesto: ABL, patente, monotributo, IIBB, Rentas
+- banco_comisiones: comisiones bancarias, mantenimiento, interbank
+- prestamo_cuota: cuotas de préstamos, Mutual, créditos
+- regalo: regalerías, flores, regalos identificables
+- donacion: ONGs, iglesias, donaciones
+- profesional_servicios: abogados, contadores, consultores, profesionales
+- otros: cuando no matchea ninguna
+
+IS_ESSENTIAL (true/false):
+- true (esencial): supermercado, servicios_publicos, telecomunicaciones, salud, farmacia, transporte, combustible, educacion, hogar_muebles, seguro, impuesto, prestamo_cuota, ferreteria
+- false (discrecional): restaurante, cafeteria, delivery_comida, streaming, gaming, entretenimiento, viajes, hoteles, belleza, gimnasio, indumentaria, regalo, donacion, marketplace (salvo que sea obvio esencial)
+- En dudas → false (discrecional)
+
+CATEGORY (broad, ya existente) sugerida por merchant:
 - Netflix/Spotify/Disney/HBO/AWS/SaaS → suscrip
 - Mercadolibre/Amazon/retail/marketplaces → compras
 - Supermercados/restaurantes/delivery → compras
@@ -424,8 +515,30 @@ CATEGORY sugerida por merchant:
 FORMATO:
 Llamá al tool record_items con un array. Ejemplo:
 [
-  { "merchant": "Fireonice", "merchant_raw": "25 000040 * FIREONICE", "amount": 99750, "currency": "ARS", "purchase_date": "2025-07-18", "cuota_numero": 9, "cuota_total": 12, "category": "compras" },
-  { "merchant": "Bedtime", "merchant_raw": "25 349704 * MERPAGO*BEDTIME", "amount": 58298.58, "currency": "ARS", "purchase_date": "2025-08-15", "cuota_numero": 8, "cuota_total": 18, "category": "compras" }
+  {
+    "merchant": "Coto",
+    "merchant_raw": "COTO*MARKET MAR 45",
+    "amount": 45320,
+    "currency": "ARS",
+    "purchase_date": "2026-02-15",
+    "cuota_numero": null,
+    "cuota_total": null,
+    "category": "compras",
+    "merchant_type": "supermercado",
+    "is_essential": true
+  },
+  {
+    "merchant": "Netflix",
+    "merchant_raw": "NETFLIX.COM",
+    "amount": 11990,
+    "currency": "ARS",
+    "purchase_date": "2026-02-03",
+    "cuota_numero": null,
+    "cuota_total": null,
+    "category": "suscrip",
+    "merchant_type": "streaming",
+    "is_essential": false
+  }
 ]
 
 Si el resumen no tiene consumos (ej saldo acreedor con 0 movimientos) → array vacío.`;
@@ -450,6 +563,8 @@ const ITEMS_TOOL = {
             "cuota_numero",
             "cuota_total",
             "category",
+            "merchant_type",
+            "is_essential",
           ],
           properties: {
             merchant: { type: "string" },
@@ -475,11 +590,100 @@ const ITEMS_TOOL = {
                 null,
               ],
             },
+            merchant_type: {
+              type: ["string", "null"],
+              enum: [
+                "supermercado",
+                "restaurante",
+                "cafeteria",
+                "delivery_comida",
+                "kiosco_almacen",
+                "combustible",
+                "transporte",
+                "peaje",
+                "estacionamiento",
+                "farmacia",
+                "salud",
+                "educacion",
+                "indumentaria",
+                "electronica",
+                "retail",
+                "marketplace",
+                "hogar_muebles",
+                "ferreteria",
+                "streaming",
+                "saas",
+                "gaming",
+                "entretenimiento",
+                "viajes_aereos",
+                "hoteles",
+                "turismo_local",
+                "belleza",
+                "gimnasio",
+                "mascota",
+                "servicios_publicos",
+                "telecomunicaciones",
+                "seguro",
+                "impuesto",
+                "banco_comisiones",
+                "prestamo_cuota",
+                "regalo",
+                "donacion",
+                "profesional_servicios",
+                "otros",
+                null,
+              ],
+            },
+            is_essential: {
+              type: ["boolean", "null"],
+            },
           },
         },
       },
     },
   },
+};
+
+// Metadata sobre merchant types (label + emoji para UI)
+export const MERCHANT_TYPE_META: Record<MerchantType, { label: string; icon: string }> = {
+  supermercado: { label: "Supermercado", icon: "🛒" },
+  restaurante: { label: "Restaurante", icon: "🍽️" },
+  cafeteria: { label: "Cafetería", icon: "☕" },
+  delivery_comida: { label: "Delivery", icon: "🛵" },
+  kiosco_almacen: { label: "Kiosco/Almacén", icon: "🏪" },
+  combustible: { label: "Combustible", icon: "⛽" },
+  transporte: { label: "Transporte", icon: "🚕" },
+  peaje: { label: "Peaje", icon: "🛣️" },
+  estacionamiento: { label: "Estacionamiento", icon: "🅿️" },
+  farmacia: { label: "Farmacia", icon: "💊" },
+  salud: { label: "Salud", icon: "🏥" },
+  educacion: { label: "Educación", icon: "🎓" },
+  indumentaria: { label: "Indumentaria", icon: "👕" },
+  electronica: { label: "Electrónica", icon: "📱" },
+  retail: { label: "Retail", icon: "🛍️" },
+  marketplace: { label: "Marketplace", icon: "📦" },
+  hogar_muebles: { label: "Hogar", icon: "🛋️" },
+  ferreteria: { label: "Ferretería", icon: "🔧" },
+  streaming: { label: "Streaming", icon: "📺" },
+  saas: { label: "SaaS", icon: "💻" },
+  gaming: { label: "Gaming", icon: "🎮" },
+  entretenimiento: { label: "Entretenimiento", icon: "🎭" },
+  viajes_aereos: { label: "Vuelos", icon: "✈️" },
+  hoteles: { label: "Hoteles", icon: "🏨" },
+  turismo_local: { label: "Turismo", icon: "🗺️" },
+  belleza: { label: "Belleza", icon: "💄" },
+  gimnasio: { label: "Gimnasio", icon: "💪" },
+  mascota: { label: "Mascota", icon: "🐾" },
+  servicios_publicos: { label: "Servicios", icon: "⚡" },
+  telecomunicaciones: { label: "Telco", icon: "📡" },
+  seguro: { label: "Seguro", icon: "🛡️" },
+  impuesto: { label: "Impuesto", icon: "📋" },
+  banco_comisiones: { label: "Comisiones banco", icon: "🏦" },
+  prestamo_cuota: { label: "Préstamo", icon: "💵" },
+  regalo: { label: "Regalo", icon: "🎁" },
+  donacion: { label: "Donación", icon: "❤️" },
+  profesional_servicios: { label: "Prof./Servicios", icon: "👔" },
+  otros: { label: "Otros", icon: "·" },
 };
 
 export async function extractStatementItems(

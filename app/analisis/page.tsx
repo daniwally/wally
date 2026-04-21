@@ -5,6 +5,7 @@ import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
 import { CAT_COLOR, Icon } from "@/components/Icon";
+import { MERCHANT_TYPE_META, type MerchantType } from "@/lib/extractor";
 import { analyzeStatement, deleteStatementBatch } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ type ItemRow = {
   cuota_numero: number | null;
   cuota_total: number | null;
   category_id: string | null;
+  merchant_type: string | null;
+  is_essential: boolean | null;
   upload_batch_id: string | null;
   source_provider: string | null;
   source_period: string | null;
@@ -34,7 +37,7 @@ export default async function AnalisisPage({
   const { data: itemsData } = await supabase()
     .from("statement_items")
     .select(
-      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, upload_batch_id, source_provider, source_period",
+      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, merchant_type, is_essential, upload_batch_id, source_provider, source_period",
     )
     .eq("user_id", WALLY_USER_ID)
     .order("amount_cents", { ascending: false });
@@ -103,7 +106,47 @@ export default async function AnalisisPage({
   const topMerchants = Array.from(merchMap.values()).sort((a, b) => b.total - a.total);
   const recurrentes = topMerchants.filter((m) => m.batchIds.size >= 2);
 
-  // Por categoría
+  // Por tipo de comercio (granular)
+  const byMerchType = new Map<string, { total: number; count: number }>();
+  itemsArs.forEach((it) => {
+    const k = it.merchant_type ?? "otros";
+    const existing = byMerchType.get(k);
+    if (existing) {
+      existing.total += it.amount_cents / 100;
+      existing.count++;
+    } else {
+      byMerchType.set(k, { total: it.amount_cents / 100, count: 1 });
+    }
+  });
+  const merchTypeItems = Array.from(byMerchType.entries())
+    .map(([k, v]) => {
+      const meta = MERCHANT_TYPE_META[k as MerchantType];
+      return {
+        key: k,
+        label: meta?.label ?? k,
+        icon: meta?.icon ?? "·",
+        total: v.total,
+        count: v.count,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  // Esencial vs discrecional
+  const essentialTotal = itemsArs
+    .filter((it) => it.is_essential === true)
+    .reduce((s, it) => s + it.amount_cents / 100, 0);
+  const discretionaryTotal = itemsArs
+    .filter((it) => it.is_essential === false)
+    .reduce((s, it) => s + it.amount_cents / 100, 0);
+  const unclassifiedTotal = itemsArs
+    .filter((it) => it.is_essential == null)
+    .reduce((s, it) => s + it.amount_cents / 100, 0);
+  const essentialPct =
+    totalArs > 0 ? Math.round((essentialTotal / totalArs) * 100) : 0;
+  const discretionaryPct =
+    totalArs > 0 ? Math.round((discretionaryTotal / totalArs) * 100) : 0;
+
+  // Por categoría (broad)
   const byCat = new Map<string, number>();
   itemsArs.forEach((it) => {
     const k = it.category_id ?? "sin-categoria";
@@ -235,6 +278,175 @@ export default async function AnalisisPage({
                 value={String(recurrentes.length)}
                 sub="en 2+ resúmenes"
               />
+            </div>
+
+            {/* Esencial vs Discrecional */}
+            <div className="v2-card" style={{ marginBottom: 16 }}>
+              <div className="v2-card-header">
+                <div>
+                  <div className="v2-card-title">Esencial vs discrecional</div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    cuánto de tu gasto es necesario (super, servicios, salud, transporte) vs
+                    discrecional (restaurantes, streaming, shopping)
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", height: 40, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                {essentialTotal > 0 && (
+                  <div
+                    style={{
+                      flex: essentialTotal,
+                      background: "var(--green)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      gap: 6,
+                    }}
+                    title={`Esencial: ${fmtARS(essentialTotal)} (${essentialPct}%)`}
+                  >
+                    {essentialPct >= 8 && <>Esencial {essentialPct}%</>}
+                  </div>
+                )}
+                {discretionaryTotal > 0 && (
+                  <div
+                    style={{
+                      flex: discretionaryTotal,
+                      background: "var(--amber)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#fff",
+                      fontSize: 12,
+                      fontWeight: 500,
+                    }}
+                    title={`Discrecional: ${fmtARS(discretionaryTotal)} (${discretionaryPct}%)`}
+                  >
+                    {discretionaryPct >= 8 && <>Discrecional {discretionaryPct}%</>}
+                  </div>
+                )}
+                {unclassifiedTotal > 0 && (
+                  <div
+                    style={{
+                      flex: unclassifiedTotal,
+                      background: "var(--surface-3)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--text-3)",
+                      fontSize: 12,
+                    }}
+                    title={`Sin clasificar: ${fmtARS(unclassifiedTotal)}`}
+                  />
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 20, marginTop: 10, fontSize: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 10, height: 10, background: "var(--green)", borderRadius: 2 }}/>
+                  <span style={{ color: "var(--text-2)" }}>Esencial</span>
+                  <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                    {fmtARS(essentialTotal)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 10, height: 10, background: "var(--amber)", borderRadius: 2 }}/>
+                  <span style={{ color: "var(--text-2)" }}>Discrecional</span>
+                  <span style={{ fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+                    {fmtARS(discretionaryTotal)}
+                  </span>
+                </div>
+                {unclassifiedTotal > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 10, height: 10, background: "var(--surface-3)", borderRadius: 2 }}/>
+                    <span style={{ color: "var(--text-3)" }}>Sin clasificar</span>
+                    <span style={{ fontVariantNumeric: "tabular-nums", color: "var(--text-3)" }}>
+                      {fmtARS(unclassifiedTotal)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Desglose por tipo de comercio */}
+            <div className="v2-card" style={{ marginBottom: 16 }}>
+              <div className="v2-card-header">
+                <div>
+                  <div className="v2-card-title">Desglose por tipo de gasto</div>
+                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                    clasificación automática por Claude según el comercio
+                  </div>
+                </div>
+                <span className="v2-badge">{merchTypeItems.length} tipos</span>
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {merchTypeItems.map((mt) => {
+                  const pct = totalArs > 0 ? (mt.total / totalArs) * 100 : 0;
+                  return (
+                    <div
+                      key={mt.key}
+                      style={{
+                        padding: "12px 14px",
+                        border: "1px solid var(--border)",
+                        borderRadius: 10,
+                        background: "var(--surface)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 15 }}>{mt.icon}</span>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>{mt.label}</span>
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                          {mt.count} {mt.count === 1 ? "item" : "items"}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 500,
+                          fontVariantNumeric: "tabular-nums",
+                          marginBottom: 4,
+                        }}
+                      >
+                        {fmtARS(mt.total)}
+                      </div>
+                      <div className="v2-progress">
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            background: "var(--accent)",
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "var(--text-3)",
+                          marginTop: 2,
+                          textAlign: "right",
+                        }}
+                      >
+                        {pct.toFixed(1)}% del total
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Resúmenes subidos */}

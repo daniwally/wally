@@ -273,6 +273,8 @@ async function analyzeSingleFile(
       cuota_numero: it.cuota_numero,
       cuota_total: it.cuota_total,
       category_id: it.category,
+      merchant_type: it.merchant_type,
+      is_essential: it.is_essential,
     }));
 
     const { error: insertErr } = await supabase().from("statement_items").insert(rows);
