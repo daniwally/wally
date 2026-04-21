@@ -110,7 +110,27 @@ export const CAT_COLOR: Record<string, string> = {
   compras: "#db2777",
   suscrip: "#16a34a",
   debito: "#737373",
+  familia: "#0891b2",
+  calu: "#ca8a04",
 };
+
+const familiaIcon = make(
+  <>
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+  </>,
+);
+
+const caluIcon = make(
+  <>
+    <circle cx="11" cy="4" r="2" />
+    <circle cx="18" cy="8" r="2" />
+    <circle cx="20" cy="14" r="2" />
+    <circle cx="4" cy="14" r="2" />
+    <path d="M8 14a4 4 0 00-4 6c0 1 1 2 2 2h10c1 0 2-1 2-2a4 4 0 00-4-6 2 2 0 01-2 0 2 2 0 01-2 0 2 2 0 01-2 0z" />
+  </>,
+);
 
 export const CAT_ICON: Record<string, (props?: IconProps) => ReactElement> = {
   servicios: Icon.zap,
@@ -120,4 +140,6 @@ export const CAT_ICON: Record<string, (props?: IconProps) => ReactElement> = {
   compras: Icon.pkg,
   suscrip: Icon.play,
   debito: Icon.bank,
+  familia: familiaIcon,
+  calu: caluIcon,
 };

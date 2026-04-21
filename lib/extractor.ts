@@ -251,6 +251,8 @@ const MANUAL_TOOL_DEFINITION = {
           "compras",
           "suscrip",
           "debito",
+          "familia",
+          "calu",
           null,
         ],
       },
