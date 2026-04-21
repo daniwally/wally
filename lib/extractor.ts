@@ -182,11 +182,13 @@ AMOUNTS:
 CATEGORÍAS:
 - servicios: luz, gas, agua, internet, celular, cable
 - tarjeta: resúmenes Visa/Master/Amex
-- expensas: consorcio
+- expensas: consorcio del edificio
 - impuestos: ABL, patente, monotributo, IIBB
-- compras: super, ropa, electro, delivery single, MercadoLibre
-- suscrip: Netflix, Spotify, AWS, SaaS, gym
-- debito: retiro cajero, débito auto
+- compras: super, ropa, electro, delivery, MercadoLibre, retail
+- suscrip: Netflix, Spotify, AWS, SaaS, gym adulto
+- debito: retiro cajero, débito auto genérico
+- familia: cuotas escolares/universidad, obra social, pediatra, cumpleaños familiares, regalos a familiares, actividades de hijos, campamentos, material escolar
+- calu: gastos de la mascota Calu — veterinario, alimento mascota, accesorios, peluquería canina, guardería
 
 PERIODO MENSUAL — usar en CUALQUIER gasto que corresponda a un mes específico:
 - Resúmenes de tarjeta (Visa/Master/Amex): suelen llegar al mes siguiente. "Resumen Visa Febrero 2026" → period_month="2026-02".
