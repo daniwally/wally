@@ -5,6 +5,7 @@ import { fmtMoney, fmtDateShort } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { KPI } from "@/components/v2/KPI";
 import { CAT_COLOR, Icon } from "@/components/Icon";
+import { MailList } from "@/components/v2/MailList";
 import {
   payExpense,
   ignoreExpense,
@@ -118,88 +119,11 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
               </div>
             </div>
 
-            {!expenses || expenses.length === 0 ? (
-              <div style={{ padding: 30, color: "var(--text-3)", fontSize: 13 }}>
-                No hay expenses en este filtro.
-              </div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="v2-table">
-                  <tbody>
-                    {expenses.map((e) => {
-                      const statusInfo = statusChip(e.status as Status);
-                      const cat = (e.category_id ?? "servicios") as CategoriaKey;
-                      const catInfo = CATEGORIAS[cat];
-                      const isSelected = selected?.id === e.id;
-
-                      return (
-                        <tr
-                          key={e.id}
-                          style={{
-                            background: isSelected ? "var(--surface-2)" : "transparent",
-                          }}
-                        >
-                          <td style={{ width: 20 }}>
-                            <span
-                              className="v2-cat-dot"
-                              style={{ background: CAT_COLOR[cat] ?? "#737373" }}
-                            />
-                          </td>
-                          <td>
-                            <Link
-                              href={`/mail?filter=${filter}&id=${e.id}`}
-                              style={{
-                                textDecoration: "none",
-                                color: "var(--text)",
-                                display: "block",
-                              }}
-                            >
-                              <div style={{ fontSize: 13, fontWeight: 500 }}>
-                                {e.provider}{e.concept ? ` · ${e.concept}` : ""}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 11.5,
-                                  color: "var(--text-3)",
-                                  marginTop: 2,
-                                  fontFamily: "var(--mono)",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  maxWidth: 320,
-                                }}
-                              >
-                                {e.source_from ?? "—"}
-                              </div>
-                            </Link>
-                          </td>
-                          <td style={{ textAlign: "right" }}>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 500,
-                                fontVariantNumeric: "tabular-nums",
-                              }}
-                            >
-                              {fmtMoney(e.amount_cents / 100, e.currency as "ARS" | "USD")}
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-                              {catInfo.label}
-                            </div>
-                          </td>
-                          <td style={{ width: 100 }}>
-                            <span className={`v2-badge ${statusInfo.cls}`}>{statusInfo.label}</span>
-                          </td>
-                          <td style={{ width: 80, color: "var(--text-3)", fontSize: 12 }}>
-                            {relativeTime(e.detected_at)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <MailList
+              expenses={expenses ?? []}
+              filter={filter}
+              selectedId={selected?.id}
+            />
           </div>
 
           <div className="v2-card">
