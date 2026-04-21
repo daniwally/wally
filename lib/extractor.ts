@@ -55,6 +55,21 @@ Confidence: 0-100 según qué tan seguro estás de la extracción.
 
 RESÚMENES DE TARJETA DE CRÉDITO — reglas críticas:
 
+A0. PERIOD_MONTH = MES DE CIERRE (último mes del ciclo de consumos):
+El period_month es el mes en que **termina el ciclo de consumos** del resumen. NO el mes del vencimiento, NO el mes del nombre del resumen si no coincide.
+
+Ejemplos:
+- Consumos "24-dic-25 al 22-ene-26" → cierra en enero → period_month="2026-01"
+- Consumos "22-ene al 19-feb-26" → cierra en febrero → period_month="2026-02"
+- Concept dice "Resumen Enero 2026" y cycle dic-ene → period_month="2026-01"
+- Concept dice "Febrero 2026" → period_month="2026-02" (salvo evidencia contraria en el ciclo)
+- Si el resumen abarca 2 meses (ej "febrero-marzo"), usar el mes de cierre (el segundo).
+
+Esto hace que:
+- El resumen de enero (cuyos consumos cierran en enero, se paga en feb) aparezca en ENERO del dashboard.
+- El resumen de febrero en FEBRERO, etc.
+- El mes del vencimiento queda registrado en due_date pero NO domina period_month.
+
 A. CUÁL ES EL MONTO CORRECTO (muy importante — no confundir):
 
 El monto del resumen a pagar es el "Saldo Actual", "Saldo Total", "Total a pagar" o "Nuevo saldo" — NO confundir con:
@@ -72,10 +87,8 @@ B. SALDO ACREEDOR / NEGATIVO:
 Si el Saldo Actual es NEGATIVO (con signo −) o el resumen dice "saldo acreedor" / "saldo a favor" / "Pago Mínimo: $0,00" → el usuario NO tiene que pagar nada este mes.
 En ese caso: **is_expense=false** con reason="saldo acreedor, no corresponde pago este mes".
 
-C. PERIOD_MONTH:
-period_month = mes de la **FECHA DE VENCIMIENTO** (cuando el usuario paga). NO el mes del consumo ni el nombre del resumen.
-- Ej: venc. 2-feb-2026 → period_month="2026-02".
-- Ej: venc. 1-abr-2026 → period_month="2026-04".
+C. PERIOD_MONTH (ver sección A0 arriba):
+period_month = mes de CIERRE del ciclo de consumos. NO el mes del vencimiento.
 
 D. CONCEPT:
 Incluí el banco + tarjeta + periodo legible para referencia ("Resumen Macro Visa Signature - venc. 01/04/2026").
@@ -213,16 +226,18 @@ PERIODO MENSUAL (period_month) — regla PRINCIPAL:
 
 El period_month representa **cuándo SALE la plata del usuario**, NO el mes del servicio NI el mes del consumo.
 
-1. Resúmenes de tarjeta de crédito: el periodo = **mes de la FECHA DE VENCIMIENTO** (fecha en que el usuario paga).
-   Ignorá el nombre del periodo del resumen ("Resumen Enero") y el rango de consumos.
-   Ejemplo: Resumen con consumos 24-dic al 22-ene, vencimiento 2-feb → period_month="2026-02" (ahí paga).
-   Ejemplo: Resumen con consumos febrero, vencimiento 1-abr → period_month="2026-04".
-   Ejemplo: Resumen Febrero con venc. 2-mar → period_month="2026-03".
+1. Resúmenes de tarjeta de crédito: el periodo = **mes en que CIERRA el ciclo de consumos** (cuando termina el periodo del resumen).
+   Ejemplo: Resumen con consumos 24-dic al 22-ene, cierre 22-ene → period_month="2026-01" (cierra en enero).
+   Ejemplo: Resumen con consumos 22-ene al 19-feb → period_month="2026-02".
+   Ejemplo: Resumen "Febrero 2026" ciclo feb → period_month="2026-02".
+   Si el resumen abarca 2 meses (ej "febrero-marzo"), usar el mes de cierre (el segundo).
 
 MONTO EN TARJETAS DE CRÉDITO — crítico:
 El amount debe ser **"Saldo Actual"**, "Saldo Total", "Nuevo saldo" o "Total a pagar" del resumen — NO "Total Consumos" (eso son solo las compras nuevas del periodo, sin restar pagos previos).
 
 Si Saldo Actual es NEGATIVO (signo "−") o dice "saldo acreedor" / "saldo a favor" / "Pago Mínimo $0" → **is_expense=false** (no hay nada que pagar este mes, ya pagaste de más).
+
+Concept sugerido: "Resumen [Banco] [Tarjeta] - [Mes del cierre] 2026" (ej "Resumen Galicia Visa - Enero 2026").
 
 2. Facturas de servicios pasados (luz, gas, agua): period_month = mes de consumo cubierto.
    Ejemplo: "Factura Edenor Marzo" emitida en abril → period_month="2026-03".
