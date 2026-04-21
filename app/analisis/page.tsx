@@ -12,6 +12,7 @@ import { MerchantTypeGrid } from "@/components/v2/MerchantTypeGrid";
 import { MerchantReclassifier } from "@/components/v2/MerchantReclassifier";
 import { CustomTypesManager } from "@/components/v2/CustomTypesManager";
 import { Collapsible } from "@/components/v2/Collapsible";
+import { RebuildButton } from "@/components/v2/RebuildButton";
 
 export const dynamic = "force-dynamic";
 
@@ -299,6 +300,27 @@ export default async function AnalisisPage({
                 value={String(recurrentes.length)}
                 sub="en 2+ resúmenes"
               />
+            </div>
+
+            {/* Barra de acciones globales */}
+            <div
+              style={{
+                padding: "10px 14px",
+                marginBottom: 16,
+                background: "var(--surface-2)",
+                borderRadius: 10,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "var(--text-2)" }}>
+                💡 Si corregiste merchants o agregaste categorías nuevas, aplicá los cambios
+                retroactivamente a todos los resúmenes subidos →
+              </div>
+              <RebuildButton label="🔄 Reclasificar todo con mis reglas" />
             </div>
 
             {/* Esencial vs Discrecional */}

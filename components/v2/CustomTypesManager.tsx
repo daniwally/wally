@@ -7,6 +7,7 @@ import {
   deleteCustomMerchantType,
   suggestIconForLabel,
 } from "@/app/actions";
+import { RebuildButton } from "./RebuildButton";
 
 type CustomType = {
   slug: string;
@@ -177,6 +178,27 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
               (&ldquo;Mantenimiento Auto&rdquo; → <code>mantenimiento_auto</code>).
             </div>
           </div>
+
+          {/* Action bar dentro del collapsible */}
+          {customTypes.length > 0 && (
+            <div
+              style={{
+                padding: "10px 20px",
+                borderBottom: "1px solid var(--border)",
+                background: "var(--surface-2)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ fontSize: 11, color: "var(--text-3)" }}>
+                Después de agregar tipos nuevos, aplicalos a resúmenes ya subidos →
+              </div>
+              <RebuildButton label="🔄 Aplicar a items existentes" />
+            </div>
+          )}
 
           {/* Lista (ordenada alfabéticamente) */}
           {customTypes.length === 0 ? (
