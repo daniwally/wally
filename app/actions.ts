@@ -261,23 +261,45 @@ async function analyzeSingleFile(
     }
 
     const batchId = crypto.randomUUID();
-    const rows = extractedItems.map((it) => ({
-      expense_id: null,
-      user_id: WALLY_USER_ID,
-      upload_batch_id: batchId,
-      source_provider: provider,
-      source_period: period,
-      merchant: it.merchant,
-      merchant_raw: it.merchant_raw,
-      amount_cents: Math.round(it.amount * 100),
-      currency: it.currency,
-      purchase_date: it.purchase_date,
-      cuota_numero: it.cuota_numero,
-      cuota_total: it.cuota_total,
-      category_id: it.category,
-      merchant_type: it.merchant_type,
-      is_essential: it.is_essential,
-    }));
+    // Aplicar overrides de merchant_type aprendidos previamente
+    const merchants = Array.from(new Set(extractedItems.map((i) => i.merchant)));
+    let overridesMap = new Map<string, { merchant_type: string; is_essential: boolean | null }>();
+    if (merchants.length > 0) {
+      const { data: overrides } = await supabase()
+        .from("merchant_type_overrides")
+        .select("merchant, merchant_type, is_essential")
+        .eq("user_id", WALLY_USER_ID)
+        .in("merchant", merchants);
+      if (overrides) {
+        overridesMap = new Map(
+          overrides.map((o) => [
+            o.merchant,
+            { merchant_type: o.merchant_type, is_essential: o.is_essential },
+          ]),
+        );
+      }
+    }
+
+    const rows = extractedItems.map((it) => {
+      const override = overridesMap.get(it.merchant);
+      return {
+        expense_id: null,
+        user_id: WALLY_USER_ID,
+        upload_batch_id: batchId,
+        source_provider: provider,
+        source_period: period,
+        merchant: it.merchant,
+        merchant_raw: it.merchant_raw,
+        amount_cents: Math.round(it.amount * 100),
+        currency: it.currency,
+        purchase_date: it.purchase_date,
+        cuota_numero: it.cuota_numero,
+        cuota_total: it.cuota_total,
+        category_id: it.category,
+        merchant_type: override?.merchant_type ?? it.merchant_type,
+        is_essential: override?.is_essential ?? it.is_essential,
+      };
+    });
 
     const { error: insertErr } = await supabase().from("statement_items").insert(rows);
     if (insertErr) return { error: `${file.name}: ${insertErr.message}` };
@@ -337,6 +359,31 @@ export async function deleteAllStatements() {
     .from("statement_items")
     .delete()
     .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/analisis");
+}
+
+export async function reclassifyMerchant(formData: FormData): Promise<void> {
+  const merchant = String(formData.get("merchant") || "").trim();
+  const newType = String(formData.get("merchant_type") || "").trim();
+  if (!merchant || !newType) return;
+
+  // Guardar override para futuras extracciones
+  await supabase().from("merchant_type_overrides").upsert(
+    {
+      user_id: WALLY_USER_ID,
+      merchant,
+      merchant_type: newType,
+    },
+    { onConflict: "user_id,merchant" },
+  );
+
+  // Actualizar todos los items existentes con ese merchant
+  await supabase()
+    .from("statement_items")
+    .update({ merchant_type: newType })
+    .eq("user_id", WALLY_USER_ID)
+    .eq("merchant", merchant);
+
   revalidatePath("/analisis");
 }
 
