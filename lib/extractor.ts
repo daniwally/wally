@@ -466,6 +466,7 @@ NORMALIZACIÓN DE MERCHANT (patrones argentinos comunes):
 Prefijos/procesadores a quitar:
 - "=DLO" o "DLO" → delivery/procesadora (sacalo). Ej "=DLORAPPI" → "Rappi"
 - "MERPAGO*X" o "MERPAGO X" → X vía MercadoPago. Ej "MERPAGO*BEDTIME" → "Bedtime"
+  **REGLA IMPORTANTE:** todo consumo cuyo merchant_raw contenga "MERPAGO*" o "MERPAGO" → merchant_type="marketplace" (prioridad sobre el tipo que inferirías por el comercio). Esto porque son compras vía MercadoPago/MercadoLibre.
 - "PAYU*X" o "PAYU-X" → X vía PayU. Ej "PAYU-NETFLIX" → "Netflix"
 - "DLOCAL*X" → X vía dLocal
 - "AMX*X" → X vía American Express gateway
