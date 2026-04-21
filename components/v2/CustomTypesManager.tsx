@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import { Icon } from "../Icon";
 import {
   addCustomMerchantType,
@@ -20,14 +20,30 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [icon, setIcon] = useState("");
+  const [iconIsManual, setIconIsManual] = useState(false);
   const [isSuggesting, startSuggest] = useTransition();
 
-  const suggest = () => {
-    if (!label.trim()) return;
-    startSuggest(async () => {
-      const emoji = await suggestIconForLabel(label);
-      setIcon(emoji);
-    });
+  // Auto-sugerir emoji cuando el label cambia (debounced 800ms)
+  // Solo si el usuario no escribió un emoji manualmente
+  useEffect(() => {
+    if (iconIsManual) return;
+    const trimmed = label.trim();
+    if (trimmed.length < 3) {
+      setIcon("");
+      return;
+    }
+    const timer = setTimeout(() => {
+      startSuggest(async () => {
+        const emoji = await suggestIconForLabel(trimmed);
+        setIcon(emoji);
+      });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [label, iconIsManual]);
+
+  const onIconChange = (v: string) => {
+    setIcon(v);
+    setIconIsManual(true);
   };
 
   return (
@@ -84,58 +100,51 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
                 await addCustomMerchantType(fd);
                 setLabel("");
                 setIcon("");
+                setIconIsManual(false);
               }}
               style={{
                 display: "grid",
-                gridTemplateColumns: "auto auto 1fr 1.6fr auto auto",
+                gridTemplateColumns: "auto 1fr 1.6fr auto auto",
                 gap: 8,
                 alignItems: "center",
               }}
             >
-              <input
-                name="icon"
-                placeholder="·"
-                maxLength={4}
-                value={icon}
-                onChange={(e) => setIcon(e.target.value)}
-                className="v2-input"
-                style={{
-                  width: 50,
-                  textAlign: "center",
-                  fontSize: 16,
-                  padding: "5px 8px",
-                }}
-              />
-              <button
-                type="button"
-                onClick={suggest}
-                disabled={!label.trim() || isSuggesting}
-                className="v2-btn sm"
-                style={{
-                  padding: "5px 8px",
-                  opacity: !label.trim() || isSuggesting ? 0.5 : 1,
-                }}
-                title="Sugerir ícono con IA según el label"
-              >
-                {isSuggesting ? (
+              <div style={{ position: "relative", width: 50 }}>
+                <input
+                  name="icon"
+                  placeholder={isSuggesting ? "…" : "·"}
+                  maxLength={4}
+                  value={icon}
+                  onChange={(e) => onIconChange(e.target.value)}
+                  className="v2-input"
+                  style={{
+                    width: 50,
+                    textAlign: "center",
+                    fontSize: 16,
+                    padding: "5px 8px",
+                  }}
+                />
+                {isSuggesting && (
                   <span
                     style={{
+                      position: "absolute",
+                      top: "50%",
+                      right: 4,
+                      transform: "translateY(-50%)",
                       display: "inline-block",
                       width: 10,
                       height: 10,
                       borderRadius: "50%",
-                      border: "2px solid currentColor",
+                      border: "2px solid var(--accent)",
                       borderTopColor: "transparent",
                       animation: "v2-spin 0.7s linear infinite",
                     }}
                   />
-                ) : (
-                  "✨"
                 )}
-              </button>
+              </div>
               <input
                 name="label"
-                placeholder="Libros"
+                placeholder="Libros, Mantenimiento auto, Juguetes…"
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
                 required
@@ -144,7 +153,7 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
               />
               <input
                 name="description"
-                placeholder="libros, revistas, e-books (opcional)"
+                placeholder="descripción breve (opcional)"
                 className="v2-input"
                 style={{ fontSize: 12, padding: "7px 10px" }}
               />
@@ -163,9 +172,9 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
               </button>
             </form>
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
-              💡 El <strong>slug</strong> se genera solo desde el label (&ldquo;Mantenimiento
-              Auto&rdquo; → <code>mantenimiento_auto</code>). Click en <strong>✨</strong> para
-              que Claude elija un emoji según el label.
+              💡 Escribí el label, el <strong>emoji se elige solo con IA</strong> (podés
+              sobreescribirlo). El <strong>slug</strong> se genera desde el label
+              (&ldquo;Mantenimiento Auto&rdquo; → <code>mantenimiento_auto</code>).
             </div>
           </div>
 

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { fmtARS } from "@/lib/format";
 import { Icon } from "../Icon";
 import { MERCHANT_TYPE_META } from "@/lib/extractor";
-import { reclassifyMerchant } from "@/app/actions";
+import { reclassifyMerchant, rebuildStatementItemsClassification } from "@/app/actions";
 
 type ItemMin = {
   id: string;
@@ -29,6 +29,22 @@ export function MerchantReclassifier({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [isRebuilding, startRebuild] = useTransition();
+  const [rebuildResult, setRebuildResult] = useState<string | null>(null);
+
+  const handleRebuild = () => {
+    startRebuild(async () => {
+      const result = await rebuildStatementItemsClassification();
+      if (result.error) {
+        setRebuildResult(`❌ Error: ${result.error}`);
+      } else {
+        setRebuildResult(
+          `✅ ${result.updated} merchants reclasificados de ${result.total} analizados`,
+        );
+      }
+      setTimeout(() => setRebuildResult(null), 5000);
+    });
+  };
 
   // Agrupar por merchant
   const merchants = useMemo(() => {
@@ -119,10 +135,16 @@ export function MerchantReclassifier({
             style={{
               padding: "12px 20px",
               borderBottom: "1px solid var(--border)",
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
             }}
           >
             <div
               style={{
+                flex: 1,
+                minWidth: 200,
                 display: "flex",
                 gap: 8,
                 alignItems: "center",
@@ -164,6 +186,48 @@ export function MerchantReclassifier({
                 </button>
               )}
             </div>
+            <button
+              type="button"
+              onClick={handleRebuild}
+              disabled={isRebuilding}
+              className="v2-btn sm primary"
+              style={{ opacity: isRebuilding ? 0.6 : 1 }}
+              title="Re-clasificar todos los merchants con las categorías/custom types/overrides actuales"
+            >
+              {isRebuilding ? (
+                <>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      border: "2px solid currentColor",
+                      borderTopColor: "transparent",
+                      animation: "v2-spin 0.7s linear infinite",
+                      marginRight: 6,
+                    }}
+                  />
+                  Reclasificando…
+                </>
+              ) : (
+                <>🔄 Rebuild con IA</>
+              )}
+            </button>
+            {rebuildResult && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-2)",
+                  width: "100%",
+                  padding: "6px 10px",
+                  background: "var(--surface-2)",
+                  borderRadius: 6,
+                }}
+              >
+                {rebuildResult}
+              </div>
+            )}
           </div>
 
           <div style={{ maxHeight: 500, overflow: "auto" }}>

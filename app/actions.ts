@@ -399,6 +399,139 @@ export async function addCustomMerchantType(formData: FormData): Promise<void> {
   revalidatePath("/analisis");
 }
 
+// Reclasifica todos los items existentes con las categorías actuales
+// (overrides + custom types + built-in). Útil después de agregar una custom type nueva
+// para aplicarla retroactivamente.
+export async function rebuildStatementItemsClassification(): Promise<{
+  total: number;
+  updated: number;
+  error?: string;
+}> {
+  try {
+    const { data: items } = await supabase()
+      .from("statement_items")
+      .select("merchant, merchant_type")
+      .eq("user_id", WALLY_USER_ID);
+
+    if (!items || items.length === 0) return { total: 0, updated: 0 };
+
+    // Unique merchants con su tipo actual
+    const merchantTypeMap = new Map<string, string | null>();
+    items.forEach((it) => {
+      if (!merchantTypeMap.has(it.merchant)) {
+        merchantTypeMap.set(it.merchant, it.merchant_type);
+      }
+    });
+    const merchants = Array.from(merchantTypeMap.keys());
+
+    // Overrides tienen precedencia — cargar antes
+    const { data: overrides } = await supabase()
+      .from("merchant_type_overrides")
+      .select("merchant, merchant_type, is_essential")
+      .eq("user_id", WALLY_USER_ID);
+    const overrideMap = new Map(
+      (overrides ?? []).map((o) => [
+        o.merchant,
+        { type: o.merchant_type, essential: o.is_essential },
+      ]),
+    );
+
+    // Merchants que no tienen override → los re-clasificamos con Claude
+    const needClassify = merchants.filter((m) => !overrideMap.has(m));
+
+    let classifications: Record<string, string> = {};
+    if (needClassify.length > 0) {
+      const { loadCustomMerchantTypes } = await import("@/lib/extractor");
+      const customTypes = await loadCustomMerchantTypes();
+
+      const customSection =
+        customTypes.length === 0
+          ? ""
+          : `\n\nCATEGORÍAS CUSTOM DEL USUARIO (preferí estas si matchean):\n${customTypes
+              .map(
+                (c) =>
+                  `- ${c.slug}: ${c.label}${c.description ? ` — ${c.description}` : ""}`,
+              )
+              .join("\n")}`;
+
+      const typesList = [
+        "supermercado, restaurante, cafeteria, delivery_comida, kiosco_almacen",
+        "combustible, transporte, peaje, estacionamiento",
+        "farmacia, salud, educacion, belleza, gimnasio, mascota",
+        "indumentaria, electronica, retail, marketplace, hogar_muebles, ferreteria",
+        "streaming, saas, gaming, entretenimiento",
+        "viajes_aereos, hoteles, turismo_local",
+        "servicios_publicos, telecomunicaciones, seguro, impuesto, banco_comisiones, prestamo_cuota",
+        "regalo, donacion, profesional_servicios, otros",
+        ...customTypes.map((c) => c.slug),
+      ].join(", ");
+
+      const { anthropic } = await import("@/lib/anthropic");
+      const response = await anthropic().messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 4000,
+        system: [
+          {
+            type: "text",
+            text: `Clasificás merchants de tarjeta de crédito argentinos en un tipo de comercio.
+
+Tipos disponibles: ${typesList}.${customSection}
+
+Devolvé SOLO un JSON válido: { "MerchantName": "tipo_slug", ... }. Nada más.
+Si un merchant no matchea claramente → "otros".`,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+        messages: [
+          {
+            role: "user",
+            content: `Clasificá estos merchants:\n${needClassify.map((m) => `- ${m}`).join("\n")}`,
+          },
+        ],
+      });
+
+      const text = response.content
+        .filter((c) => c.type === "text")
+        .map((c) => (c.type === "text" ? c.text : ""))
+        .join("");
+
+      try {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) classifications = JSON.parse(match[0]);
+      } catch {
+        // Ignorar parse errors — dejará merchants en su tipo actual
+      }
+    }
+
+    // Aplicar: overrides primero, luego classifications
+    let updated = 0;
+    for (const merchant of merchants) {
+      const newType =
+        overrideMap.get(merchant)?.type ?? classifications[merchant] ?? null;
+      if (!newType) continue;
+      if (newType === merchantTypeMap.get(merchant)) continue; // sin cambio
+
+      const essential = overrideMap.get(merchant)?.essential;
+      const updatePayload: Record<string, unknown> = { merchant_type: newType };
+      if (essential !== undefined && essential !== null) {
+        updatePayload.is_essential = essential;
+      }
+
+      await supabase()
+        .from("statement_items")
+        .update(updatePayload)
+        .eq("user_id", WALLY_USER_ID)
+        .eq("merchant", merchant);
+      updated++;
+    }
+
+    revalidatePath("/analisis");
+    return { total: merchants.length, updated };
+  } catch (e) {
+    return { total: 0, updated: 0, error: e instanceof Error ? e.message : "error" };
+  }
+}
+
 // Sugerir un emoji apropiado con Claude Haiku
 export async function suggestIconForLabel(label: string): Promise<string> {
   if (!label || label.trim().length < 2) return "·";
