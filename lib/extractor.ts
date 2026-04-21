@@ -7,6 +7,7 @@ export type ExtractedExpense = {
   amount: number | null;
   currency: "ARS" | "USD" | null;
   due_date: string | null;
+  period_month: string | null; // YYYY-MM del periodo cubierto (solo para resúmenes de tarjeta)
   category: "servicios" | "tarjeta" | "expensas" | "impuestos" | "compras" | "suscrip" | "debito" | null;
   confidence: number;
   reason: string | null;
@@ -47,7 +48,22 @@ Due date: formato YYYY-MM-DD. Si no hay vencimiento explícito pero es un gasto 
 
 Amount: en unidades (no centavos). Ej: 24580 significa $24.580 ARS o US$24.580 según currency. Preservar decimales si vienen (ej 42.80).
 
-Confidence: 0-100 según qué tan seguro estás de la extracción.`;
+Confidence: 0-100 según qué tan seguro estás de la extracción.
+
+RESÚMENES DE TARJETA DE CRÉDITO — regla importante:
+El resumen de una tarjeta normalmente llega **al mes siguiente** del periodo cubierto:
+- Un resumen recibido en marzo suele cubrir gastos de FEBRERO
+- Un resumen recibido en abril cubre MARZO
+- etc.
+
+Para estos casos:
+1. Detectá el periodo real del resumen leyendo el cuerpo del mail (suele decir "Periodo", "Del X al Y", "Resumen de Febrero", "Mes: FEBRERO 2026", etc)
+2. Si no lo dice explícito, asumí: periodo = mes anterior al de recepción del mail
+3. Completá \`period_month\` en formato YYYY-MM (ej "2026-02" para febrero 2026)
+4. En \`concept\` incluí el periodo legible (ej "Resumen Visa - Febrero 2026")
+5. \`due_date\` sigue siendo la fecha límite de pago impresa en el resumen (NO confundir con periodo)
+
+Para NO-tarjetas (facturas luz, expensas, compras, suscripciones) → \`period_month: null\`.`;
 
 const TOOL_DEFINITION = {
   name: "record_expense",
@@ -62,6 +78,7 @@ const TOOL_DEFINITION = {
       "amount",
       "currency",
       "due_date",
+      "period_month",
       "category",
       "confidence",
       "reason",
@@ -72,12 +89,21 @@ const TOOL_DEFINITION = {
         description: "true si el mail es una factura/cobro/compra real. false si no.",
       },
       provider: { type: ["string", "null"], description: "Nombre de la empresa/proveedor" },
-      concept: { type: ["string", "null"], description: "Descripción corta del gasto" },
+      concept: {
+        type: ["string", "null"],
+        description:
+          "Descripción corta. Para resúmenes de tarjeta incluir el periodo (ej 'Resumen Visa - Febrero 2026')",
+      },
       amount: { type: ["number", "null"], description: "Monto en unidades (no centavos)" },
       currency: { type: ["string", "null"], enum: ["ARS", "USD", null] },
       due_date: {
         type: ["string", "null"],
-        description: "YYYY-MM-DD. Null si no hay fecha clara.",
+        description: "YYYY-MM-DD. Fecha límite de pago (NO es el periodo). Null si no hay.",
+      },
+      period_month: {
+        type: ["string", "null"],
+        description:
+          "YYYY-MM del periodo cubierto, SOLO para resúmenes de tarjeta. null para facturas normales.",
       },
       category: {
         type: ["string", "null"],

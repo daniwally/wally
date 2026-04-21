@@ -76,7 +76,7 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader section="Panel" title="Dashboard" />
+      <PageHeader section="Panel" title="Dashboard Wally" />
 
       <div className="v2-content">
         <div className="v2-grid v2-grid-hero" style={{ marginBottom: 20 }}>

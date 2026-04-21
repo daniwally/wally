@@ -17,7 +17,7 @@ export function Sidebar({ pendingCount = 0 }: { pendingCount?: number }) {
   const pathname = usePathname();
 
   const tabs: NavTab[] = [
-    { href: "/", label: "Dashboard", icon: <Icon.home />, section: "general" },
+    { href: "/", label: "Dashboard Wally", icon: <Icon.home />, section: "general" },
     {
       href: "/pendientes",
       label: "Pendientes",

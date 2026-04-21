@@ -7,6 +7,13 @@ import { notifyNewExpense } from "@/lib/notify";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+// Given "YYYY-MM" returns ISO timestamp of the last day of that month at 12:00 UTC
+function lastDayOfMonth(yyyymm: string): string {
+  const [y, m] = yyyymm.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)); // day 0 of next month = last of this
+  return new Date(Date.UTC(y, m - 1, lastDay.getUTCDate(), 12, 0, 0)).toISOString();
+}
+
 type RuleResult = {
   sender: string;
   provider: string | null;
@@ -102,6 +109,14 @@ export async function GET(req: Request) {
 
             const status = rule.auto_approve ? "auto_approved" : "pending_approval";
 
+            // Si es resumen de tarjeta con period_month detectado, usar último día del periodo como paid_at
+            const isCardStatement =
+              extracted.category === "tarjeta" && extracted.period_month;
+            const paidAtForCard =
+              status === "auto_approved" && isCardStatement && extracted.period_month
+                ? lastDayOfMonth(extracted.period_month)
+                : null;
+
             const { data: inserted, error: insertErr } = await supabase()
               .from("expenses")
               .insert({
@@ -110,6 +125,7 @@ export async function GET(req: Request) {
                 rule_id: rule.id,
                 provider: extracted.provider ?? rule.provider ?? "Desconocido",
                 concept: extracted.concept,
+                paid_at: paidAtForCard,
                 amount_cents: amountCents,
                 currency: extracted.currency ?? "ARS",
                 category_id: extracted.category ?? rule.category_id,
@@ -214,6 +230,7 @@ export async function GET(req: Request) {
               rule_id: null,
               provider: extracted.provider ?? "Desconocido",
               concept: extracted.concept,
+              paid_at: null,
               amount_cents: amountCents,
               currency: extracted.currency ?? "ARS",
               category_id: extracted.category,
