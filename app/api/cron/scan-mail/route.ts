@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { fetchMailsBySender } from "@/lib/google";
 import { extractExpense } from "@/lib/extractor";
+import { notifyNewExpense } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -94,7 +95,9 @@ export async function GET(req: Request) {
 
             const amountCents = Math.round(extracted.amount * 100);
 
-            const { error: insertErr } = await supabase()
+            const status = rule.auto_approve ? "auto_approved" : "pending_approval";
+
+            const { data: inserted, error: insertErr } = await supabase()
               .from("expenses")
               .insert({
                 user_id: WALLY_USER_ID,
@@ -106,20 +109,41 @@ export async function GET(req: Request) {
                 currency: extracted.currency ?? "ARS",
                 category_id: extracted.category ?? rule.category_id,
                 due_at: extracted.due_date,
-                status: rule.auto_approve ? "auto_approved" : "pending_approval",
+                status,
                 confidence_provider: extracted.confidence,
                 confidence_amount: extracted.confidence,
                 confidence_due: extracted.confidence,
                 source_message_id: mail.id,
                 source_from: mail.from,
                 raw_extract_json: extracted,
-              });
-            if (insertErr) {
-              errors.push(`insert: ${insertErr.message}`);
+              })
+              .select("id")
+              .single();
+
+            if (insertErr || !inserted) {
+              errors.push(`insert: ${insertErr?.message ?? "unknown"}`);
               continue;
             }
             detected++;
             totalDetected++;
+
+            if (status === "pending_approval") {
+              try {
+                await notifyNewExpense({
+                  id: inserted.id,
+                  provider: extracted.provider ?? rule.provider ?? "Desconocido",
+                  concept: extracted.concept,
+                  amount_cents: amountCents,
+                  currency: (extracted.currency ?? "ARS") as "ARS" | "USD",
+                  category_id: extracted.category ?? rule.category_id,
+                  due_at: extracted.due_date,
+                  source_from: mail.from,
+                  confidence_amount: extracted.confidence,
+                });
+              } catch (e) {
+                errors.push(`notify: ${e instanceof Error ? e.message : String(e)}`);
+              }
+            }
           } catch (e) {
             errors.push(`extract: ${e instanceof Error ? e.message : String(e)}`);
           }
