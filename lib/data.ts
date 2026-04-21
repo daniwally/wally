@@ -36,13 +36,42 @@ export type InsightRow = {
   read_at: string | null;
 };
 
-function getMonthBounds() {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-  const end = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-  ).toISOString();
+function getMonthBounds(yyyymm?: string) {
+  let y: number, m: number;
+  if (yyyymm && /^\d{4}-\d{2}$/.test(yyyymm)) {
+    [y, m] = yyyymm.split("-").map(Number);
+  } else {
+    const now = new Date();
+    y = now.getUTCFullYear();
+    m = now.getUTCMonth() + 1;
+  }
+  const start = new Date(Date.UTC(y, m - 1, 1)).toISOString();
+  const end = new Date(Date.UTC(y, m, 1)).toISOString();
   return { start, end };
+}
+
+export async function getActiveMonths(): Promise<string[]> {
+  // Meses en los que hay al menos un gasto paid/auto
+  const { data } = await supabase()
+    .from("expenses")
+    .select("paid_at")
+    .eq("user_id", WALLY_USER_ID)
+    .in("status", ["paid", "auto_approved"])
+    .not("paid_at", "is", null);
+  const set = new Set<string>();
+  (data ?? []).forEach((e) => {
+    if (!e.paid_at) return;
+    const d = new Date(e.paid_at);
+    set.add(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`,
+    );
+  });
+  // Agrego mes actual siempre
+  const now = new Date();
+  set.add(
+    `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`,
+  );
+  return Array.from(set).sort().reverse(); // más reciente primero
 }
 
 export async function getCategories() {
@@ -66,8 +95,8 @@ export async function getPendientes() {
   return (data ?? []) as ExpenseRow[];
 }
 
-export async function getPagadosMes() {
-  const { start, end } = getMonthBounds();
+export async function getPagadosMes(yyyymm?: string) {
+  const { start, end } = getMonthBounds(yyyymm);
   const { data, error } = await supabase()
     .from("expenses")
     .select("*")
@@ -142,13 +171,14 @@ export async function getHistorico(monthsBack = 7): Promise<HistPoint[]> {
   return points;
 }
 
-export async function getDashboardData() {
-  const [categorias, pendientes, pagados, insights, historico] = await Promise.all([
+export async function getDashboardData(yyyymm?: string) {
+  const [categorias, pendientes, pagados, insights, historico, months] = await Promise.all([
     getCategories(),
     getPendientes(),
-    getPagadosMes(),
+    getPagadosMes(yyyymm),
     getInsights(),
     getHistorico(7),
+    getActiveMonths(),
   ]);
 
   const totalArsMes = pagados
@@ -168,6 +198,7 @@ export async function getDashboardData() {
     pagados,
     insights,
     historico,
+    months,
     totalArsMes,
     pendienteArs,
   };

@@ -1,7 +1,7 @@
 import { type CategoriaKey, CATEGORIAS } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
 import { getDashboardData } from "@/lib/data";
-import { CAT_COLOR } from "@/components/Icon";
+import { CAT_COLOR, Icon } from "@/components/Icon";
 import { PageHeader } from "@/components/PageHeader";
 import { KPI } from "@/components/v2/KPI";
 import { LineChart } from "@/components/v2/LineChart";
@@ -9,13 +9,54 @@ import { TimelineV2 } from "@/components/v2/TimelineV2";
 import { DonutV2 } from "@/components/v2/DonutV2";
 import { PendRow } from "@/components/v2/PendRow";
 import { V2Insight } from "@/components/v2/InsightCard";
+import { MonthSelector } from "@/components/v2/MonthSelector";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const { pendientes, pagados, insights, historico, totalArsMes, pendienteArs } =
-    await getDashboardData();
+const MES_LABELS = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+
+type SearchParams = Promise<{ mes?: string }>;
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const { mes } = await searchParams;
+  const validMes = mes && /^\d{4}-\d{2}$/.test(mes) ? mes : undefined;
+
+  const { pendientes, pagados, insights, historico, months, totalArsMes, pendienteArs } =
+    await getDashboardData(validMes);
+
+  const now = new Date();
+  const currentMes = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const selectedMes = validMes ?? currentMes;
+  const isCurrentMonth = selectedMes === currentMes;
+
+  const monthOptions = months.map((m) => {
+    const [y, mm] = m.split("-").map(Number);
+    return {
+      value: m,
+      label: `${MES_LABELS[mm - 1]} ${y}`,
+    };
+  });
+
+  const [selY, selM] = selectedMes.split("-").map(Number);
+  const selMonthLabel = `${MES_LABELS[selM - 1]} ${selY}`;
 
   const cats: Partial<Record<CategoriaKey, number>> = {};
   [...pagados, ...pendientes.filter((p) => p.currency === "ARS")].forEach((e) => {
@@ -40,8 +81,8 @@ export default async function DashboardPage() {
   const prevLabel = prevPoint ? prevPoint.mes : "mes anterior";
   const hasHistory = historico.some((h) => h.total > 0);
 
-  const hoy = new Date().getUTCDate();
-  const diasMes = 30;
+  const hoy = isCurrentMonth ? now.getUTCDate() : -1;
+  const diasMes = new Date(Date.UTC(selY, selM, 0)).getUTCDate();
 
   const eventosTimeline = [
     ...pagados
@@ -53,21 +94,26 @@ export default async function DashboardPage() {
         cat: e.category_id!,
         nombre: e.provider,
       })),
-    ...pendientes
-      .filter((e) => e.due_at && e.currency === "ARS" && e.category_id)
-      .map((e) => ({
-        dia: new Date(e.due_at! + "T00:00").getUTCDate(),
-        monto: e.amount_cents / 100,
-        pagado: false,
-        cat: e.category_id!,
-        nombre: e.provider,
-      })),
+    ...(isCurrentMonth
+      ? pendientes
+          .filter((e) => e.due_at && e.currency === "ARS" && e.category_id)
+          .filter((e) => {
+            const d = new Date(e.due_at! + "T00:00");
+            return d.getUTCMonth() === selM - 1 && d.getUTCFullYear() === selY;
+          })
+          .map((e) => ({
+            dia: new Date(e.due_at! + "T00:00").getUTCDate(),
+            monto: e.amount_cents / 100,
+            pagado: false,
+            cat: e.category_id!,
+            nombre: e.provider,
+          }))
+      : []),
   ];
 
   const vencenEstaSemana = pendientes.filter((e) => {
     if (!e.due_at || e.currency !== "ARS") return false;
     const d = new Date(e.due_at + "T00:00");
-    const now = new Date();
     const diff = (d.getTime() - now.getTime()) / 86400000;
     return diff >= 0 && diff <= 7;
   });
@@ -76,14 +122,26 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <PageHeader section="Panel" title="Dashboard Wally" />
+      <PageHeader
+        section="Panel"
+        title="Dashboard Wally"
+        right={
+          <>
+            <MonthSelector current={selectedMes} options={monthOptions} />
+            <div style={{ width: 1, height: 22, background: "var(--border)" }} />
+            <Link href="/nuevo" className="v2-btn primary">
+              <Icon.plus /> Nuevo gasto
+            </Link>
+          </>
+        }
+      />
 
       <div className="v2-content">
         <div className="v2-grid v2-grid-hero" style={{ marginBottom: 20 }}>
           <div className="v2-card">
             <div className="v2-card-header">
               <div>
-                <div className="v2-card-title">Gastado en abril</div>
+                <div className="v2-card-title">Gastado en {selMonthLabel.toLowerCase()}</div>
                 <div className="v2-kpi-value hero" style={{ marginTop: 8 }}>
                   {fmtARS(totalArsMes)}
                 </div>
@@ -102,18 +160,22 @@ export default async function DashboardPage() {
           </div>
 
           <KPI
-            title="Pendiente"
+            title="Pendiente total"
             value={fmtARS(pendienteArs)}
             sub={`${pendientes.length} detectados`}
             trend="flat"
             trendLabel="sin revisar"
           />
           <KPI
-            title="Vence esta semana"
-            value={`${vencenEstaSemana.length} facturas`}
-            sub={fmtARS(vencenEstaSemana.reduce((s, e) => s + e.amount_cents / 100, 0))}
-            trend="up"
-            trendLabel="urgente"
+            title={isCurrentMonth ? "Vence esta semana" : "Pendientes ver"}
+            value={isCurrentMonth ? `${vencenEstaSemana.length} facturas` : `${pendientes.length}`}
+            sub={
+              isCurrentMonth
+                ? fmtARS(vencenEstaSemana.reduce((s, e) => s + e.amount_cents / 100, 0))
+                : "en total"
+            }
+            trend={isCurrentMonth && vencenEstaSemana.length > 0 ? "up" : "flat"}
+            trendLabel={isCurrentMonth && vencenEstaSemana.length > 0 ? "urgente" : "ok"}
           />
           <KPI
             title="Categorías activas"
@@ -200,10 +262,16 @@ export default async function DashboardPage() {
         <div className="v2-card" style={{ marginBottom: 16 }}>
           <div className="v2-card-header">
             <div>
-              <div className="v2-card-title">Calendario de abril</div>
+              <div className="v2-card-title">Calendario de {selMonthLabel.toLowerCase()}</div>
               <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
-                Gastos diarios · <span style={{ color: "var(--accent)" }}>hoy es {hoy}</span> ·
-                punteado = pendiente
+                Gastos diarios
+                {isCurrentMonth && (
+                  <>
+                    {" · "}
+                    <span style={{ color: "var(--accent)" }}>hoy es {hoy}</span>
+                  </>
+                )}
+                {" · punteado = pendiente"}
               </div>
             </div>
             <div style={{ display: "flex", gap: 14, fontSize: 11.5, color: "var(--text-3)", flexWrap: "wrap" }}>
@@ -227,7 +295,7 @@ export default async function DashboardPage() {
           <div className="v2-card">
             <div className="v2-card-header">
               <div className="v2-card-title">Por categoría</div>
-              <span className="v2-badge outline">abril</span>
+              <span className="v2-badge outline">{selMonthLabel.toLowerCase()}</span>
             </div>
             <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
               <DonutV2
