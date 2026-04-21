@@ -185,6 +185,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
         <form
           action={addRule}
+          className="r-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "2fr 1.2fr 1fr auto auto",
@@ -268,6 +269,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
               return (
                 <div
                   key={r.id}
+                  className="r-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "2fr 1.2fr auto auto auto auto",
@@ -351,6 +353,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
 
         <form
           action={setBudget}
+          className="r-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "1.2fr 1fr auto",

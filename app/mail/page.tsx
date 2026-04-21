@@ -63,6 +63,7 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
       </div>
 
       <div
+        className="r-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr 1fr 1fr",
@@ -96,7 +97,7 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
         />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 20 }}>
+      <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 20 }}>
         {/* Lista */}
         <div
           className="paper-plain"

@@ -93,6 +93,7 @@ function ClassicView({ data }: { data: Data }) {
   return (
     <div style={{ padding: "0 4px" }}>
       <div
+        className="r-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "2fr 1fr 1fr 1fr",
@@ -151,7 +152,7 @@ function ClassicView({ data }: { data: Data }) {
         <KPICard label="Ahorro posible" value={fmtARS(8780)} sub="2 subs sin usar" accent="green" />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 18 }}>
+      <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 18 }}>
         <div
           className="paper-plain"
           style={{ padding: 22, border: "2px solid #1a1a1a", borderRadius: 14 }}
@@ -208,7 +209,7 @@ function ClassicView({ data }: { data: Data }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 18 }}>
+      <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: 18 }}>
         <div
           className="paper-plain"
           style={{ padding: 22, border: "2px solid #1a1a1a", borderRadius: 14 }}
@@ -222,7 +223,7 @@ function ClassicView({ data }: { data: Data }) {
           style={{ padding: 22, border: "2px solid #1a1a1a", borderRadius: 14 }}
         >
           <div className="section-title">Alertas & insights</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
+          <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 4 }}>
             {insights.map((ins) => (
               <InsightCard key={ins.id} ins={ins} />
             ))}
@@ -352,7 +353,7 @@ function NovelView({ data }: { data: Data }) {
         <Timeline hoy={hoy} diasMes={diasMes} eventos={eventosTimeline} pendingLabels={pendingLabels} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 24, padding: "0 12px" }}>
+      <div className="r-grid" style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 24, padding: "0 12px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -441,6 +442,7 @@ function NovelView({ data }: { data: Data }) {
       <div style={{ padding: "8px 12px 24px" }}>
         <div className="section-title">Lo que notó el bot esta semana</div>
         <div
+          className="r-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(4, 1fr)",

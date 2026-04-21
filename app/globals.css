@@ -243,6 +243,31 @@ hr.scribble {
 .row { display: flex; gap: 16px; }
 .col { display: flex; flex-direction: column; gap: 16px; }
 
+/* ─── Responsive ─── */
+@media (max-width: 900px) {
+  .app { padding: 16px 10px; }
+  .topbar {
+    flex-direction: column; align-items: stretch; gap: 12px;
+    padding: 14px 20px;
+    border-radius: 40px 16px 40px 16px / 16px 40px 16px 40px;
+  }
+  .topbar .logo { font-size: 30px; }
+  .topbar .logo-mark { width: 34px; height: 34px; font-size: 20px; }
+  .nav-tabs { flex-wrap: wrap; justify-content: center; gap: 6px 10px; }
+  .page-title { font-size: 48px; line-height: 1; }
+
+  /* Override inline grid-template-columns on dashboards */
+  .r-grid { grid-template-columns: 1fr !important; }
+  .r-grid-2 { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 560px) {
+  .app { padding: 12px 8px; }
+  .page-title { font-size: 38px; }
+  .section-title { font-size: 26px; }
+  .logo-mark { transform: rotate(-4deg); }
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
