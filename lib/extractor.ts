@@ -140,6 +140,7 @@ export type ManualExtracted = {
     | null;
   intent: "past" | "future";
   due_date: string | null;
+  period_month: string | null;
   reason: string | null;
 };
 
@@ -165,6 +166,13 @@ CATEGORÍAS:
 - compras: super, ropa, electro, delivery single, MercadoLibre
 - suscrip: Netflix, Spotify, AWS, SaaS, gym
 - debito: retiro cajero, débito auto
+
+RESÚMENES DE TARJETA — importante:
+Los resúmenes de tarjeta llegan al mes siguiente del periodo cubierto. Si te mandan "Resumen Visa Febrero", eso corresponde a gastos hechos en FEBRERO, no al mes en que fue subido.
+- Detectá el periodo del resumen (ej en el PDF/imagen suele decir "Periodo: FEBRERO 2026" o "Del 01/02 al 28/02")
+- Completá \`period_month\` en formato YYYY-MM (ej "2026-02")
+- En \`concept\` incluí el periodo legible ("Resumen Visa - Febrero 2026")
+- Si no es resumen de tarjeta → \`period_month: null\`
 
 DUE_DATE (fecha del gasto — semántica depende del intent):
 - Si intent=past: la fecha EN QUE se realizó el gasto (ej: "gasté 50k ayer", "el 15 de marzo pagué...", "la semana pasada")
@@ -193,6 +201,7 @@ const MANUAL_TOOL_DEFINITION = {
       "category",
       "intent",
       "due_date",
+      "period_month",
       "reason",
     ],
     properties: {
@@ -201,6 +210,10 @@ const MANUAL_TOOL_DEFINITION = {
       concept: { type: ["string", "null"] },
       amount: { type: ["number", "null"] },
       currency: { type: ["string", "null"], enum: ["ARS", "USD", null] },
+      period_month: {
+        type: ["string", "null"],
+        description: "YYYY-MM del periodo — SOLO para resúmenes de tarjeta, null en otros casos",
+      },
       category: {
         type: ["string", "null"],
         enum: [

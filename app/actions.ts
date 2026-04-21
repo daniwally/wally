@@ -66,6 +66,12 @@ export async function ignoreExpense(formData: FormData) {
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
+function lastDayOfMonthISO(yyyymm: string): string {
+  const [y, m] = yyyymm.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1, lastDay, 12, 0, 0)).toISOString();
+}
+
 function insertErrorRedirect(reason: string): never {
   redirect(`/nuevo?error=${encodeURIComponent(reason)}`);
 }
@@ -130,10 +136,17 @@ export async function createManualExpense(formData: FormData): Promise<void> {
   const amountCents = Math.round(extracted!.amount! * 100);
   const currency = extracted!.currency ?? "ARS";
   const isPast = extracted!.intent === "past";
+
+  // Prioridad para paid_at (si es past):
+  // 1. period_month (último día del periodo) - resúmenes de tarjeta
+  // 2. due_date explícita (fecha mencionada por usuario o vista en comprobante)
+  // 3. ahora
   const paidAt = isPast
-    ? extracted!.due_date
-      ? new Date(extracted!.due_date + "T12:00:00Z").toISOString()
-      : new Date().toISOString()
+    ? extracted!.period_month
+      ? lastDayOfMonthISO(extracted!.period_month)
+      : extracted!.due_date
+        ? new Date(extracted!.due_date + "T12:00:00Z").toISOString()
+        : new Date().toISOString()
     : null;
   const dueAt = !isPast ? extracted!.due_date : null;
 

@@ -36,8 +36,14 @@ export type InsightRow = {
   read_at: string | null;
 };
 
-const MES_INICIO = "2026-04-01";
-const MES_FIN = "2026-05-01";
+function getMonthBounds() {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
+  ).toISOString();
+  return { start, end };
+}
 
 export async function getCategories() {
   const { data, error } = await supabase()
@@ -61,13 +67,14 @@ export async function getPendientes() {
 }
 
 export async function getPagadosMes() {
+  const { start, end } = getMonthBounds();
   const { data, error } = await supabase()
     .from("expenses")
     .select("*")
     .eq("user_id", WALLY_USER_ID)
     .in("status", ["paid", "auto_approved"])
-    .gte("paid_at", MES_INICIO)
-    .lt("paid_at", MES_FIN)
+    .gte("paid_at", start)
+    .lt("paid_at", end)
     .order("paid_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as ExpenseRow[];

@@ -14,6 +14,12 @@ import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 
 export const dynamic = "force-dynamic";
 
+function lastDayOfMonthISO(yyyymm: string): string {
+  const [y, m] = yyyymm.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1, lastDay, 12, 0, 0)).toISOString();
+}
+
 type TgPhotoSize = { file_id: string; file_unique_id: string; width: number; height: number; file_size?: number };
 type TgDocument = { file_id: string; file_unique_id: string; file_name?: string; mime_type?: string; file_size?: number };
 
@@ -259,13 +265,16 @@ async function handleExtracted(
   const currency = extracted.currency ?? "ARS";
   const isPast = extracted.intent === "past";
 
-  // Si es past con fecha explícita → usar esa fecha como paid_at
-  // Si es past sin fecha → usar ahora
-  // Si es future → date va a due_at, paid_at queda null
+  // Prioridad para paid_at (si es past):
+  // 1. period_month — resúmenes de tarjeta (ej Visa Febrero llega en marzo = cuenta en feb)
+  // 2. due_date explícita mencionada
+  // 3. ahora
   const paidAt = isPast
-    ? extracted.due_date
-      ? new Date(extracted.due_date + "T12:00:00Z").toISOString()
-      : new Date().toISOString()
+    ? extracted.period_month
+      ? lastDayOfMonthISO(extracted.period_month)
+      : extracted.due_date
+        ? new Date(extracted.due_date + "T12:00:00Z").toISOString()
+        : new Date().toISOString()
     : null;
   const dueAt = !isPast ? extracted.due_date : null;
 
