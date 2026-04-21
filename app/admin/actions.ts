@@ -32,6 +32,48 @@ export async function removeRule(formData: FormData) {
   revalidatePath("/admin");
 }
 
+export async function setBudget(formData: FormData) {
+  const categoryId = String(formData.get("category") || "");
+  const amount = Number(formData.get("amount") || 0);
+
+  if (!categoryId || !amount || amount <= 0) return;
+
+  const amountCents = Math.round(amount * 100);
+
+  const { data: existing } = await supabase()
+    .from("budgets")
+    .select("id")
+    .eq("user_id", WALLY_USER_ID)
+    .eq("category_id", categoryId)
+    .eq("period", "month")
+    .maybeSingle();
+
+  if (existing) {
+    await supabase()
+      .from("budgets")
+      .update({ amount_cents: amountCents })
+      .eq("id", existing.id);
+  } else {
+    await supabase().from("budgets").insert({
+      user_id: WALLY_USER_ID,
+      category_id: categoryId,
+      period: "month",
+      amount_cents: amountCents,
+      currency: "ARS",
+    });
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/");
+}
+
+export async function removeBudget(formData: FormData) {
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+  await supabase().from("budgets").delete().eq("id", id).eq("user_id", WALLY_USER_ID);
+  revalidatePath("/admin");
+}
+
 export async function triggerScan() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const secret = process.env.CRON_SECRET;

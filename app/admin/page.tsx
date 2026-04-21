@@ -1,6 +1,7 @@
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
-import { addRule, removeRule, triggerScan } from "./actions";
+import { fmtARS } from "@/lib/format";
+import { addRule, removeRule, triggerScan, setBudget, removeBudget } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,16 @@ type SearchParams = Promise<{ ok?: string; error?: string }>;
 export default async function AdminPage({ searchParams }: { searchParams: SearchParams }) {
   const { ok, error } = await searchParams;
 
-  const [{ data: accounts }, { data: rules }] = await Promise.all([
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+
+  const [
+    { data: accounts },
+    { data: rules },
+    { data: budgets },
+    { data: paidThisMonth },
+  ] = await Promise.all([
     supabase()
       .from("accounts")
       .select("id, type, account, status, last_scan_at, created_at")
@@ -20,7 +30,25 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
       .select("id, sender_pattern, provider, category_id, auto_approve, active, hits")
       .eq("user_id", WALLY_USER_ID)
       .order("created_at", { ascending: false }),
+    supabase()
+      .from("budgets")
+      .select("id, category_id, amount_cents, currency")
+      .eq("user_id", WALLY_USER_ID)
+      .eq("period", "month"),
+    supabase()
+      .from("expenses")
+      .select("category_id, amount_cents, currency")
+      .eq("user_id", WALLY_USER_ID)
+      .in("status", ["paid", "auto_approved", "pending_approval"])
+      .or(`and(paid_at.gte.${monthStart},paid_at.lt.${monthEnd}),and(paid_at.is.null,detected_at.gte.${monthStart},detected_at.lt.${monthEnd})`),
   ]);
+
+  const spentByCat: Record<string, number> = {};
+  (paidThisMonth ?? [])
+    .filter((e) => e.currency === "ARS" && e.category_id)
+    .forEach((e) => {
+      spentByCat[e.category_id!] = (spentByCat[e.category_id!] ?? 0) + e.amount_cents / 100;
+    });
 
   const gmails = (accounts ?? []).filter((a) => a.type === "gmail");
 
@@ -291,6 +319,174 @@ export default async function AdminPage({ searchParams }: { searchParams: Search
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* Presupuestos */}
+      <div
+        className="paper-plain"
+        style={{
+          padding: 22,
+          border: "2px solid #1a1a1a",
+          borderRadius: 14,
+          marginBottom: 20,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            marginBottom: 16,
+          }}
+        >
+          <div>
+            <div className="section-title">Presupuestos mensuales</div>
+            <div className="t-hand" style={{ fontSize: 14, color: "var(--ink-3)" }}>
+              Tope por categoría (ARS). Si lo pasás, se marca en rojo.
+            </div>
+          </div>
+        </div>
+
+        <form
+          action={setBudget}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr auto",
+            gap: 10,
+            marginBottom: 16,
+            alignItems: "center",
+          }}
+        >
+          <select
+            name="category"
+            defaultValue="servicios"
+            style={{
+              fontFamily: "var(--hand)",
+              fontSize: 14,
+              padding: "10px 12px",
+              border: "1.5px solid var(--ink)",
+              borderRadius: 8,
+              background: "var(--paper)",
+            }}
+          >
+            {Object.entries(CATEGORIAS).map(([k, c]) => (
+              <option key={k} value={k}>
+                {c.icon} {c.label}
+              </option>
+            ))}
+          </select>
+          <input
+            name="amount"
+            type="number"
+            min="0"
+            step="1000"
+            placeholder="Monto ARS (ej 50000)"
+            required
+            style={{
+              fontFamily: "var(--hand)",
+              fontSize: 14,
+              padding: "10px 12px",
+              border: "1.5px solid var(--ink)",
+              borderRadius: 8,
+              background: "var(--paper)",
+            }}
+          />
+          <button type="submit" className="btn-sketch primary">
+            Guardar
+          </button>
+        </form>
+
+        {!budgets || budgets.length === 0 ? (
+          <div
+            className="t-hand"
+            style={{ color: "var(--ink-3)", padding: "8px 0", fontSize: 14 }}
+          >
+            Todavía no hay presupuestos. Agregá uno arriba ↑
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {budgets
+              .sort((a, b) => (a.category_id ?? "").localeCompare(b.category_id ?? ""))
+              .map((b) => {
+                const cat = (b.category_id ?? "servicios") as CategoriaKey;
+                const catInfo = CATEGORIAS[cat];
+                const budget = b.amount_cents / 100;
+                const spent = spentByCat[cat] ?? 0;
+                const pct = Math.min(100, Math.round((spent / budget) * 100));
+                const over = spent > budget;
+                const barColor = over
+                  ? "var(--red)"
+                  : pct >= 80
+                    ? "var(--orange)"
+                    : "var(--green)";
+
+                return (
+                  <div
+                    key={b.id}
+                    style={{
+                      padding: "12px 14px",
+                      border: "1.5px solid var(--ink)",
+                      borderRadius: 10,
+                      background: over ? "rgba(248,184,184,0.3)" : "var(--paper-2)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span style={{ fontSize: 20 }}>{catInfo.icon}</span>
+                      <span className="t-hand" style={{ fontWeight: 700, fontSize: 15 }}>
+                        {catInfo.label}
+                      </span>
+                      <span
+                        className="t-hand"
+                        style={{ flex: 1, fontSize: 13, color: "var(--ink-3)" }}
+                      >
+                        {fmtARS(spent)} / {fmtARS(budget)}{" "}
+                        {over && (
+                          <span style={{ color: "var(--red)", fontWeight: 700 }}>
+                            · ${Math.round(spent - budget).toLocaleString("es-AR")} encima
+                          </span>
+                        )}
+                      </span>
+                      <form action={removeBudget}>
+                        <input type="hidden" name="id" value={b.id} />
+                        <button
+                          type="submit"
+                          className="btn-sketch ghost"
+                          style={{ fontSize: 12, padding: "4px 10px" }}
+                        >
+                          ✕
+                        </button>
+                      </form>
+                    </div>
+                    <div
+                      style={{
+                        height: 10,
+                        background: "var(--paper)",
+                        border: "1.5px solid var(--ink)",
+                        borderRadius: 20,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          background: barColor,
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         )}
       </div>
