@@ -66,7 +66,7 @@ export default async function MailPage({ searchParams }: { searchParams: SearchP
 
   return (
     <>
-      <PageHeader section="General" title="Parser de mails" />
+      <PageHeader section="General" title="Scan de Gastos" />
 
       <div className="v2-content">
         <div className="v2-grid v2-grid-4" style={{ marginBottom: 20 }}>
