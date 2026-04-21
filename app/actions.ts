@@ -249,7 +249,7 @@ async function analyzeSingleFile(
   try {
     const [metadata, extractedItems] = await Promise.all([
       extractAttachmentExpense(attachment, "Solo dame provider y period_month del resumen."),
-      extractStatementItems(attachment),
+      extractStatementItems(attachment, file.size),
     ]);
     const provider = metadata.provider ?? "Resumen";
     const period = metadata.period_month;

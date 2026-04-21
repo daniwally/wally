@@ -722,6 +722,25 @@ export const MERCHANT_TYPE_META: Record<MerchantType, { label: string; icon: str
   otros: { label: "Otros", icon: "·" },
 };
 
+// Auto-switch entre Haiku (rápido/barato) y Sonnet (preciso/caro)
+// basado en tamaño del archivo como proxy de cantidad de consumos
+function pickItemsModel(fileBytes?: number): {
+  model: "claude-haiku-4-5-20251001" | "claude-sonnet-4-6";
+  maxTokens: number;
+} {
+  const size = fileBytes ?? 0;
+  // PDFs chicos (<250KB): típicamente 10-40 items → Haiku con 8k tokens alcanza
+  // PDFs medianos (250-400KB): 40-80 items → Haiku con 16k tokens
+  // PDFs grandes (>400KB) o imagen (vision siempre más exigente): Sonnet
+  if (size === 0 || size > 400_000) {
+    return { model: "claude-sonnet-4-6", maxTokens: 16000 };
+  }
+  if (size > 250_000) {
+    return { model: "claude-haiku-4-5-20251001", maxTokens: 16000 };
+  }
+  return { model: "claude-haiku-4-5-20251001", maxTokens: 8000 };
+}
+
 export async function extractStatementItems(
   attachment:
     | {
@@ -732,46 +751,63 @@ export async function extractStatementItems(
         type: "document";
         source: { type: "base64"; media_type: "application/pdf"; data: string };
       },
+  fileBytes?: number,
 ): Promise<StatementItem[]> {
-  // Uso Sonnet para extracciones de items porque:
-  // 1. Los resúmenes pueden tener 100+ items y Haiku tenía max_tokens muy chico
-  // 2. Normalización de merchants complejos (prefijos DLO/MERPAGO/PAYU) requiere más contexto
-  // 3. Mejor detección de cuotas y fechas en formatos varios
-  const response = await anthropic().messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 16000,
-    system: [
-      { type: "text", text: STATEMENT_ITEMS_SYSTEM, cache_control: { type: "ephemeral" } },
-    ],
-    tools: [ITEMS_TOOL],
-    tool_choice: { type: "tool", name: "record_items" },
-    messages: [
-      {
-        role: "user",
-        content: [
-          attachment,
-          {
-            type: "text",
-            text: "Extraé TODOS los consumos del resumen (puede haber 50-150 items en múltiples páginas). No te saltees ninguno. Aplicá las exclusiones (pagos, IVA, percepciones, intereses, etc.).",
-          },
-        ],
-      },
-    ],
-  });
+  const { model, maxTokens } = pickItemsModel(fileBytes);
 
-  const toolUse = response.content.find((c) => c.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    // Log the actual response for debugging
-    const textBlocks = response.content
-      .filter((c) => c.type === "text")
-      .map((c) => (c.type === "text" ? c.text : ""))
-      .join(" ");
-    throw new Error(
-      `Claude did not call record_items. Stop reason: ${response.stop_reason}. Text: ${textBlocks.slice(0, 200)}`,
-    );
+  async function call(chosenModel: typeof model, chosenMaxTokens: number) {
+    const response = await anthropic().messages.create({
+      model: chosenModel,
+      max_tokens: chosenMaxTokens,
+      system: [
+        { type: "text", text: STATEMENT_ITEMS_SYSTEM, cache_control: { type: "ephemeral" } },
+      ],
+      tools: [ITEMS_TOOL],
+      tool_choice: { type: "tool", name: "record_items" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            attachment,
+            {
+              type: "text",
+              text: "Extraé TODOS los consumos del resumen (puede haber 50-150 items en múltiples páginas). No te saltees ninguno. Aplicá las exclusiones (pagos, IVA, percepciones, intereses, etc.).",
+            },
+          ],
+        },
+      ],
+    });
+
+    const toolUse = response.content.find((c) => c.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") {
+      return { success: false as const, stopReason: response.stop_reason };
+    }
+    const input = toolUse.input as { items: StatementItem[] };
+    return {
+      success: true as const,
+      items: input.items ?? [],
+      stopReason: response.stop_reason,
+    };
   }
-  const input = toolUse.input as { items: StatementItem[] };
-  return input.items ?? [];
+
+  // Intento primero con el modelo elegido por auto-switch
+  let result = await call(model, maxTokens);
+
+  // Fallback a Sonnet si Haiku truncó (max_tokens) o no llamó tool
+  if (
+    !result.success ||
+    (result.success && result.items.length === 0 && result.stopReason === "max_tokens") ||
+    (result.success && result.items.length === 0 && model !== "claude-sonnet-4-6")
+  ) {
+    if (model !== "claude-sonnet-4-6") {
+      result = await call("claude-sonnet-4-6", 16000);
+    }
+  }
+
+  if (!result.success) {
+    throw new Error(`Extraction failed. Stop reason: ${result.stopReason}`);
+  }
+  return result.items;
 }
 
 export async function extractManualExpense(text: string): Promise<ManualExtracted> {
