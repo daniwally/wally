@@ -11,9 +11,7 @@ import {
 import {
   extractManualExpense,
   extractAttachmentExpense,
-  extractStatementItems,
   type ManualExtracted,
-  type StatementItem,
 } from "@/lib/extractor";
 import { downloadTelegramFile } from "@/lib/telegram";
 import { transcribeAudio } from "@/lib/whisper";
@@ -242,23 +240,6 @@ async function handleAudio(chatId: number, fileId: string, mimeType: string) {
   }
 }
 
-async function saveStatementItemsTg(expenseId: string, items: StatementItem[]) {
-  if (!items.length) return;
-  const rows = items.map((it) => ({
-    expense_id: expenseId,
-    user_id: WALLY_USER_ID,
-    merchant: it.merchant,
-    merchant_raw: it.merchant_raw,
-    amount_cents: Math.round(it.amount * 100),
-    currency: it.currency,
-    purchase_date: it.purchase_date,
-    cuota_numero: it.cuota_numero,
-    cuota_total: it.cuota_total,
-    category_id: it.category,
-  }));
-  await supabase().from("statement_items").insert(rows);
-}
-
 async function handleAttachment(
   chatId: number,
   fileId: string,
@@ -309,27 +290,7 @@ async function handleAttachment(
     }
 
     const extracted = await extractAttachmentExpense(attachment, caption);
-    const expenseId = await handleExtracted(
-      chatId,
-      extracted,
-      effectiveMime === "application/pdf" ? "PDF" : "foto",
-    );
-
-    // Si fue una tarjeta y se insertó, extraer line items
-    if (expenseId && extracted.category === "tarjeta") {
-      try {
-        const items = await extractStatementItems(attachment);
-        if (items.length > 0) {
-          await saveStatementItemsTg(expenseId, items);
-          await sendMessage(
-            chatId,
-            `📊 Analicé ${items.length} consumos del resumen`,
-          );
-        }
-      } catch (e) {
-        console.error("items extraction error", e);
-      }
-    }
+    await handleExtracted(chatId, extracted, effectiveMime === "application/pdf" ? "PDF" : "foto");
   } catch (e) {
     await sendMessage(chatId, `Error procesando: ${e instanceof Error ? e.message : "unknown"}`);
   }
@@ -339,14 +300,14 @@ async function handleExtracted(
   chatId: number,
   extracted: ManualExtracted,
   source: string,
-): Promise<string | null> {
+): Promise<void> {
   if (!extracted.is_expense || !extracted.amount || !extracted.provider) {
     await sendMessage(
       chatId,
       `No pude detectar un gasto${extracted.reason ? ": " + escapeMd(extracted.reason) : ""}`,
       { parse_mode: "MarkdownV2" },
     );
-    return null;
+    return;
   }
 
   const amountCents = Math.round(extracted.amount * 100);
@@ -398,7 +359,7 @@ async function handleExtracted(
 
   if (insertErr || !inserted) {
     await sendMessage(chatId, `Error guardando: ${insertErr?.message ?? "?"}`);
-    return null;
+    return;
   }
 
   const cat = ((finalCategory ?? "servicios") as CategoriaKey);
@@ -423,8 +384,6 @@ async function handleExtracted(
     parse_mode: "MarkdownV2",
     inline_keyboard: [[{ text: "🗑 Borrar", callback_data: `delete:${inserted.id}` }]],
   });
-
-  return inserted.id;
 }
 
 async function handleCallback(cb: TgCallbackQuery) {

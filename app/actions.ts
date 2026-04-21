@@ -8,7 +8,6 @@ import {
   extractAttachmentExpense,
   extractStatementItems,
   type ManualExtracted,
-  type StatementItem,
 } from "@/lib/extractor";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { getSenderKey, applyLearnedCategory } from "@/lib/category-learning";
@@ -67,23 +66,6 @@ export async function ignoreExpense(formData: FormData) {
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
-async function saveStatementItems(expenseId: string, items: StatementItem[]) {
-  if (!items.length) return;
-  const rows = items.map((it) => ({
-    expense_id: expenseId,
-    user_id: WALLY_USER_ID,
-    merchant: it.merchant,
-    merchant_raw: it.merchant_raw,
-    amount_cents: Math.round(it.amount * 100),
-    currency: it.currency,
-    purchase_date: it.purchase_date,
-    cuota_numero: it.cuota_numero,
-    cuota_total: it.cuota_total,
-    category_id: it.category,
-  }));
-  const { error } = await supabase().from("statement_items").insert(rows);
-  if (error) throw error;
-}
 
 function lastDayOfMonthISO(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number);
@@ -206,21 +188,118 @@ export async function createManualExpense(formData: FormData): Promise<void> {
 
   if (insertErr || !insertedExpense) insertErrorRedirect(insertErr?.message ?? "insert error");
 
-  // Si es resumen de tarjeta con archivo, extraer line items en segundo plano
-  if (category === "tarjeta" && attachment) {
-    try {
-      const items = await extractStatementItems(attachment);
-      await saveStatementItems(insertedExpense.id, items);
-    } catch (e) {
-      console.error("items extraction error", e);
-      // No bloqueamos el flujo si falla
-    }
-  }
-
   revalidatePath("/");
   revalidatePath("/pendientes");
   revalidatePath("/mail");
   redirect(`/pendientes?ok=${encodeURIComponent(extracted!.provider)}`);
+}
+
+// ──────────────────────────────────────────
+// Análisis-only (no crea expense, solo items)
+// ──────────────────────────────────────────
+
+function analysisErrorRedirect(reason: string): never {
+  redirect(`/analisis?error=${encodeURIComponent(reason)}`);
+}
+
+export async function analyzeStatement(formData: FormData): Promise<void> {
+  const file = formData.get("file") as File | null;
+  if (!file || file.size === 0) analysisErrorRedirect("Subí un archivo");
+
+  if (file.size > MAX_FILE_BYTES) {
+    analysisErrorRedirect(`Archivo muy grande (max ${MAX_FILE_BYTES / 1024 / 1024}MB)`);
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const base64 = buffer.toString("base64");
+  const mime = file.type;
+
+  type Att =
+    | { type: "image"; source: { type: "base64"; media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } }
+    | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
+  let attachment: Att;
+  if (mime === "application/pdf") {
+    attachment = {
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: base64 },
+    };
+  } else if (
+    mime === "image/jpeg" ||
+    mime === "image/png" ||
+    mime === "image/gif" ||
+    mime === "image/webp"
+  ) {
+    attachment = {
+      type: "image",
+      source: { type: "base64", media_type: mime, data: base64 },
+    };
+  } else {
+    analysisErrorRedirect(`Tipo no soportado: ${mime}`);
+  }
+
+  // Dos calls paralelas: metadata del resumen (provider + período) + items
+  let provider = "Resumen";
+  let period: string | null = null;
+  let items: Array<{
+    merchant: string;
+    merchant_raw: string | null;
+    amount: number;
+    currency: "ARS" | "USD";
+    purchase_date: string | null;
+    cuota_numero: number | null;
+    cuota_total: number | null;
+    category: string | null;
+  }> = [];
+
+  try {
+    const [metadata, extractedItems] = await Promise.all([
+      extractAttachmentExpense(attachment, "Solo dame provider y period_month del resumen."),
+      extractStatementItems(attachment),
+    ]);
+    provider = metadata.provider ?? "Resumen";
+    period = metadata.period_month;
+    items = extractedItems;
+  } catch (e) {
+    analysisErrorRedirect(e instanceof Error ? e.message : "error de extracción");
+  }
+
+  if (items.length === 0) {
+    analysisErrorRedirect("No detecté consumos en el resumen");
+  }
+
+  const batchId = crypto.randomUUID();
+  const rows = items.map((it) => ({
+    expense_id: null,
+    user_id: WALLY_USER_ID,
+    upload_batch_id: batchId,
+    source_provider: provider,
+    source_period: period,
+    merchant: it.merchant,
+    merchant_raw: it.merchant_raw,
+    amount_cents: Math.round(it.amount * 100),
+    currency: it.currency,
+    purchase_date: it.purchase_date,
+    cuota_numero: it.cuota_numero,
+    cuota_total: it.cuota_total,
+    category_id: it.category,
+  }));
+
+  const { error: insertErr } = await supabase().from("statement_items").insert(rows);
+  if (insertErr) analysisErrorRedirect(insertErr.message);
+
+  revalidatePath("/analisis");
+  redirect(`/analisis?ok=${encodeURIComponent(`${provider}: ${items.length} consumos`)}`);
+}
+
+export async function deleteStatementBatch(formData: FormData) {
+  const batchId = String(formData.get("batch_id") || "");
+  if (!batchId) return;
+  await supabase()
+    .from("statement_items")
+    .delete()
+    .eq("upload_batch_id", batchId)
+    .eq("user_id", WALLY_USER_ID);
+  revalidatePath("/analisis");
 }
 
 export async function revertExpense(formData: FormData) {

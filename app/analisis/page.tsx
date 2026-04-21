@@ -1,9 +1,11 @@
 import { PageHeader } from "@/components/PageHeader";
 import { KPI } from "@/components/v2/KPI";
+import { SubmitButton } from "@/components/v2/SubmitButton";
 import { supabase, WALLY_USER_ID } from "@/lib/supabase";
 import { CATEGORIAS, type CategoriaKey } from "@/lib/mock-data";
 import { fmtARS } from "@/lib/format";
-import { CAT_COLOR } from "@/components/Icon";
+import { CAT_COLOR, Icon } from "@/components/Icon";
+import { analyzeStatement, deleteStatementBatch } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +17,24 @@ type ItemRow = {
   cuota_numero: number | null;
   cuota_total: number | null;
   category_id: string | null;
-  expense_id: string;
+  upload_batch_id: string | null;
+  source_provider: string | null;
+  source_period: string | null;
 };
 
-export default async function AnalisisPage() {
+type SearchParams = Promise<{ ok?: string; error?: string }>;
+
+export default async function AnalisisPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const { ok, error } = await searchParams;
+
   const { data: itemsData } = await supabase()
     .from("statement_items")
     .select(
-      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, expense_id",
+      "merchant, amount_cents, currency, purchase_date, cuota_numero, cuota_total, category_id, upload_batch_id, source_provider, source_period",
     )
     .eq("user_id", WALLY_USER_ID)
     .order("amount_cents", { ascending: false });
@@ -34,12 +46,41 @@ export default async function AnalisisPage() {
   const totalArs = itemsArs.reduce((s, i) => s + i.amount_cents / 100, 0);
   const totalUsd = itemsUsd.reduce((s, i) => s + i.amount_cents / 100, 0);
 
-  // Top merchants (ARS + USD separados)
+  // Batches: agrupar por upload_batch_id para listar los resúmenes subidos
+  type BatchInfo = {
+    batchId: string;
+    provider: string;
+    period: string | null;
+    itemCount: number;
+    totalArs: number;
+  };
+  const batchMap = new Map<string, BatchInfo>();
+  items.forEach((it) => {
+    if (!it.upload_batch_id) return;
+    const existing = batchMap.get(it.upload_batch_id);
+    if (existing) {
+      existing.itemCount++;
+      if (it.currency === "ARS") existing.totalArs += it.amount_cents / 100;
+    } else {
+      batchMap.set(it.upload_batch_id, {
+        batchId: it.upload_batch_id,
+        provider: it.source_provider ?? "Resumen",
+        period: it.source_period,
+        itemCount: 1,
+        totalArs: it.currency === "ARS" ? it.amount_cents / 100 : 0,
+      });
+    }
+  });
+  const batches = Array.from(batchMap.values()).sort((a, b) =>
+    (b.period ?? "").localeCompare(a.period ?? ""),
+  );
+
+  // Top merchants (ARS)
   type MerchantAgg = {
     merchant: string;
     total: number;
     count: number;
-    expenseIds: Set<string>;
+    batchIds: Set<string>;
     category: string | null;
   };
   const merchMap = new Map<string, MerchantAgg>();
@@ -48,21 +89,19 @@ export default async function AnalisisPage() {
     if (existing) {
       existing.total += it.amount_cents / 100;
       existing.count++;
-      existing.expenseIds.add(it.expense_id);
+      if (it.upload_batch_id) existing.batchIds.add(it.upload_batch_id);
     } else {
       merchMap.set(it.merchant, {
         merchant: it.merchant,
         total: it.amount_cents / 100,
         count: 1,
-        expenseIds: new Set([it.expense_id]),
+        batchIds: new Set(it.upload_batch_id ? [it.upload_batch_id] : []),
         category: it.category_id,
       });
     }
   });
   const topMerchants = Array.from(merchMap.values()).sort((a, b) => b.total - a.total);
-
-  // Recurrentes: aparece en 2+ resúmenes diferentes
-  const recurrentes = topMerchants.filter((m) => m.expenseIds.size >= 2);
+  const recurrentes = topMerchants.filter((m) => m.batchIds.size >= 2);
 
   // Por categoría
   const byCat = new Map<string, number>();
@@ -73,25 +112,23 @@ export default async function AnalisisPage() {
   const catItems = Array.from(byCat.entries())
     .map(([k, v]) => ({
       key: k,
-      label: (CATEGORIAS[k as CategoriaKey]?.label ?? "Sin categoría"),
+      label: CATEGORIAS[k as CategoriaKey]?.label ?? "Sin categoría",
       color: CAT_COLOR[k] ?? "#737373",
       total: v,
     }))
     .sort((a, b) => b.total - a.total);
 
-  // Cuotas en curso: items con cuota_numero < cuota_total
-  const cuotasEnCurso = itemsArs.filter(
-    (it) => it.cuota_numero && it.cuota_total && it.cuota_numero < it.cuota_total,
-  );
+  // Cuotas en curso
   const cuotasMap = new Map<string, { merchant: string; cuotaNum: number; cuotaTot: number; monto: number }>();
-  cuotasEnCurso.forEach((it) => {
+  itemsArs.forEach((it) => {
+    if (!it.cuota_numero || !it.cuota_total || it.cuota_numero >= it.cuota_total) return;
     const key = `${it.merchant}__${it.amount_cents}`;
     const existing = cuotasMap.get(key);
-    if (!existing || it.cuota_numero! > existing.cuotaNum) {
+    if (!existing || it.cuota_numero > existing.cuotaNum) {
       cuotasMap.set(key, {
         merchant: it.merchant,
-        cuotaNum: it.cuota_numero!,
-        cuotaTot: it.cuota_total!,
+        cuotaNum: it.cuota_numero,
+        cuotaTot: it.cuota_total,
         monto: it.amount_cents / 100,
       });
     }
@@ -104,30 +141,91 @@ export default async function AnalisisPage() {
 
   return (
     <>
-      <PageHeader section="General" title="Análisis de consumos" />
+      <PageHeader
+        section="General"
+        title="Análisis de consumos"
+        right={
+          <span className="v2-badge outline">
+            <Icon.sparkle /> Independiente del tracking
+          </span>
+        }
+      />
 
       <div className="v2-content">
+        {ok && (
+          <div
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              border: "1px solid var(--green)",
+              background: "var(--green-soft)",
+              color: "var(--green)",
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
+            ✓ Analizado: <strong>{decodeURIComponent(ok)}</strong>
+          </div>
+        )}
+        {error && (
+          <div
+            style={{
+              padding: "10px 14px",
+              marginBottom: 16,
+              border: "1px solid var(--red)",
+              background: "var(--red-soft)",
+              color: "var(--red)",
+              borderRadius: 10,
+              fontSize: 13,
+            }}
+          >
+            ⚠ {decodeURIComponent(error)}
+          </div>
+        )}
+
+        {/* Uploader */}
+        <div className="v2-card" style={{ marginBottom: 16 }}>
+          <div className="v2-card-header">
+            <div>
+              <div className="v2-card-title">Subir resumen para analizar</div>
+              <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
+                Extrae consumos, merchants y cuotas. <strong>No se crea gasto</strong> — solo
+                se suma al análisis.
+              </div>
+            </div>
+          </div>
+          <form
+            action={analyzeStatement}
+            encType="multipart/form-data"
+            style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+          >
+            <input
+              type="file"
+              name="file"
+              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+              className="v2-input"
+              style={{ flex: 1, minWidth: 260, padding: "6px 10px", fontSize: 13 }}
+              required
+            />
+            <SubmitButton loadingLabel="Analizando…">
+              <Icon.sparkle /> Analizar
+            </SubmitButton>
+          </form>
+        </div>
+
         {items.length === 0 ? (
           <div
             className="v2-card"
             style={{ padding: 30, textAlign: "center", color: "var(--text-3)" }}
           >
-            Todavía no hay consumos analizados. Subí un resumen de tarjeta via{" "}
-            <a href="/nuevo" style={{ color: "var(--text)" }}>
-              /nuevo
-            </a>{" "}
-            o Telegram y se analizan automáticamente.
+            Todavía no hay consumos analizados. Subí un resumen arriba ↑
           </div>
         ) : (
           <>
             <div className="v2-grid v2-grid-4" style={{ marginBottom: 16 }}>
-              <KPI title="Consumos analizados" value={String(items.length)} sub="items" />
-              <KPI title="Total ARS" value={fmtARS(totalArs)} sub="sumando todos" />
-              <KPI
-                title="Total USD"
-                value={`US$${totalUsd.toFixed(2)}`}
-                sub="dólares separados"
-              />
+              <KPI title="Consumos" value={String(items.length)} sub={`${batches.length} resúmenes`} />
+              <KPI title="Total ARS" value={fmtARS(totalArs)} sub="sumando todo" />
+              <KPI title="Total USD" value={`US$${totalUsd.toFixed(2)}`} sub="dólares" />
               <KPI
                 title="Recurrentes"
                 value={String(recurrentes.length)}
@@ -135,14 +233,78 @@ export default async function AnalisisPage() {
               />
             </div>
 
+            {/* Resúmenes subidos */}
+            <div className="v2-card" style={{ marginBottom: 16, padding: 0 }}>
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              >
+                <div className="v2-card-title">Resúmenes analizados</div>
+                <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
+                  borrá un batch y desaparecen todos sus items del análisis
+                </div>
+              </div>
+              <table className="v2-table">
+                <thead>
+                  <tr>
+                    <th>Proveedor</th>
+                    <th>Período</th>
+                    <th style={{ textAlign: "right" }}>Items</th>
+                    <th style={{ textAlign: "right" }}>Total ARS</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batches.map((b) => (
+                    <tr key={b.batchId}>
+                      <td style={{ fontWeight: 500 }}>{b.provider}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+                        {b.period ?? "—"}
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          fontFamily: "var(--mono)",
+                          fontSize: 12,
+                        }}
+                      >
+                        {b.itemCount}
+                      </td>
+                      <td
+                        style={{
+                          textAlign: "right",
+                          fontWeight: 500,
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {fmtARS(b.totalArs)}
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <form action={deleteStatementBatch}>
+                          <input type="hidden" name="batch_id" value={b.batchId} />
+                          <button
+                            type="submit"
+                            className="v2-btn sm ghost"
+                            style={{ color: "var(--red)" }}
+                            title="Borrar análisis de este resumen"
+                          >
+                            <Icon.trash />
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
             <div className="v2-grid v2-grid-2-asym" style={{ marginBottom: 16 }}>
               {/* Top merchants */}
               <div className="v2-card" style={{ padding: 0 }}>
                 <div
-                  style={{
-                    padding: "16px 20px",
-                    borderBottom: "1px solid var(--border)",
-                  }}
+                  style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}
                 >
                   <div className="v2-card-title">Top merchants</div>
                   <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 2 }}>
@@ -155,7 +317,7 @@ export default async function AnalisisPage() {
                       <tr>
                         <th>Merchant</th>
                         <th>Categoría</th>
-                        <th style={{ textAlign: "right" }}>Resúmenes</th>
+                        <th style={{ textAlign: "right" }}>Res.</th>
                         <th style={{ textAlign: "right" }}>Items</th>
                         <th style={{ textAlign: "right" }}>Total</th>
                       </tr>
@@ -169,7 +331,7 @@ export default async function AnalisisPage() {
                           <tr key={m.merchant}>
                             <td style={{ fontWeight: 500 }}>
                               {m.merchant}
-                              {m.expenseIds.size >= 2 && (
+                              {m.batchIds.size >= 2 && (
                                 <span
                                   className="v2-badge blue"
                                   style={{ marginLeft: 6, fontSize: 9.5 }}
@@ -201,7 +363,7 @@ export default async function AnalisisPage() {
                                 color: "var(--text-3)",
                               }}
                             >
-                              {m.expenseIds.size}
+                              {m.batchIds.size}
                             </td>
                             <td
                               style={{
@@ -261,16 +423,6 @@ export default async function AnalisisPage() {
                         <div className="v2-progress">
                           <div style={{ width: `${pct}%`, background: c.color }} />
                         </div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--text-3)",
-                            textAlign: "right",
-                            marginTop: 2,
-                          }}
-                        >
-                          {pct.toFixed(1)}%
-                        </div>
                       </div>
                     );
                   })}
@@ -303,85 +455,77 @@ export default async function AnalisisPage() {
                     pendiente: {fmtARS(totalCuotasPendientes)}
                   </span>
                 </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="v2-table">
-                    <thead>
-                      <tr>
-                        <th>Merchant</th>
-                        <th>Progreso</th>
-                        <th style={{ textAlign: "right" }}>Cuota actual</th>
-                        <th style={{ textAlign: "right" }}>Pendiente</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cuotas.map((c) => {
-                        const restantes = c.cuotaTot - c.cuotaNum;
-                        const pct = (c.cuotaNum / c.cuotaTot) * 100;
-                        return (
-                          <tr key={c.merchant + c.monto}>
-                            <td style={{ fontWeight: 500 }}>{c.merchant}</td>
-                            <td>
-                              <div
+                <table className="v2-table">
+                  <thead>
+                    <tr>
+                      <th>Merchant</th>
+                      <th>Progreso</th>
+                      <th style={{ textAlign: "right" }}>Cuota</th>
+                      <th style={{ textAlign: "right" }}>Pendiente</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cuotas.map((c) => {
+                      const restantes = c.cuotaTot - c.cuotaNum;
+                      const pct = (c.cuotaNum / c.cuotaTot) * 100;
+                      return (
+                        <tr key={c.merchant + c.monto}>
+                          <td style={{ fontWeight: 500 }}>{c.merchant}</td>
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                maxWidth: 240,
+                              }}
+                            >
+                              <div className="v2-progress" style={{ flex: 1, minWidth: 100 }}>
+                                <div
+                                  style={{ width: `${pct}%`, background: "var(--accent)" }}
+                                />
+                              </div>
+                              <span
                                 style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 10,
-                                  maxWidth: 240,
+                                  fontSize: 11,
+                                  fontFamily: "var(--mono)",
+                                  color: "var(--text-3)",
+                                  whiteSpace: "nowrap",
                                 }}
                               >
-                                <div
-                                  className="v2-progress"
-                                  style={{ flex: 1, minWidth: 100 }}
-                                >
-                                  <div
-                                    style={{
-                                      width: `${pct}%`,
-                                      background: "var(--accent)",
-                                    }}
-                                  />
-                                </div>
-                                <span
-                                  style={{
-                                    fontSize: 11,
-                                    fontFamily: "var(--mono)",
-                                    color: "var(--text-3)",
-                                    whiteSpace: "nowrap",
-                                  }}
-                                >
-                                  {c.cuotaNum}/{c.cuotaTot}
-                                </span>
-                              </div>
-                            </td>
-                            <td
-                              style={{
-                                textAlign: "right",
-                                fontVariantNumeric: "tabular-nums",
-                                fontSize: 13,
-                                fontWeight: 500,
-                              }}
-                            >
-                              {fmtARS(c.monto)}
-                            </td>
-                            <td
-                              style={{
-                                textAlign: "right",
-                                fontVariantNumeric: "tabular-nums",
-                                fontSize: 13,
-                                fontWeight: 500,
-                                color: "var(--amber)",
-                              }}
-                            >
-                              {fmtARS(c.monto * restantes)}
-                              <div style={{ fontSize: 10, color: "var(--text-3)" }}>
-                                {restantes} restantes
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                                {c.cuotaNum}/{c.cuotaTot}
+                              </span>
+                            </div>
+                          </td>
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontVariantNumeric: "tabular-nums",
+                              fontSize: 13,
+                              fontWeight: 500,
+                            }}
+                          >
+                            {fmtARS(c.monto)}
+                          </td>
+                          <td
+                            style={{
+                              textAlign: "right",
+                              fontVariantNumeric: "tabular-nums",
+                              fontSize: 13,
+                              fontWeight: 500,
+                              color: "var(--amber)",
+                            }}
+                          >
+                            {fmtARS(c.monto * restantes)}
+                            <div style={{ fontSize: 10, color: "var(--text-3)" }}>
+                              {restantes} restantes
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </>

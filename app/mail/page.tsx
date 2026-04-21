@@ -177,6 +177,8 @@ async function DetailPanel({ expense }: { expense: Expense }) {
     category_id: string | null;
   }> | null = null;
 
+  // NOTA: el análisis de consumos vive en /analisis (separado del tracking).
+  // Esta sección queda por compatibilidad con expenses antiguos que tuvieran items linkeados.
   if (cat === "tarjeta") {
     const { data } = await supabase()
       .from("statement_items")
