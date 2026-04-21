@@ -120,6 +120,32 @@ export default async function DashboardPage({
 
   const totalCat = catItems.reduce((s, c) => s + c.value, 0);
 
+  // Breakdown de tarjetas de crédito por proveedor (banco + tarjeta)
+  const tarjetasMap = new Map<string, number>();
+  pagados
+    .filter((e) => e.category_id === "tarjeta" && e.currency === "ARS")
+    .forEach((e) => {
+      const key = e.provider.trim();
+      tarjetasMap.set(key, (tarjetasMap.get(key) ?? 0) + e.amount_cents / 100);
+    });
+  const tarjetasItems = Array.from(tarjetasMap.entries())
+    .map(([provider, value]) => ({ provider, value }))
+    .sort((a, b) => b.value - a.value);
+  const totalTarjetas = tarjetasItems.reduce((s, t) => s + t.value, 0);
+
+  // Breakdown de débitos/bancos (category=debito)
+  const bancosMap = new Map<string, number>();
+  pagados
+    .filter((e) => e.category_id === "debito" && e.currency === "ARS")
+    .forEach((e) => {
+      const key = e.provider.trim();
+      bancosMap.set(key, (bancosMap.get(key) ?? 0) + e.amount_cents / 100);
+    });
+  const bancosItems = Array.from(bancosMap.entries())
+    .map(([provider, value]) => ({ provider, value }))
+    .sort((a, b) => b.value - a.value);
+  const totalBancos = bancosItems.reduce((s, b) => s + b.value, 0);
+
   return (
     <>
       <PageHeader
@@ -289,6 +315,159 @@ export default async function DashboardPage({
             </div>
           </div>
           <TimelineV2 eventos={eventosTimeline} diasMes={diasMes} hoy={hoy} />
+        </div>
+
+        <div className="v2-grid v2-grid-2" style={{ marginBottom: 16 }}>
+          {/* Tarjetas de crédito */}
+          <div className="v2-card">
+            <div className="v2-card-header">
+              <div>
+                <div className="v2-card-title">Tarjetas de crédito</div>
+                <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
+                  Por banco y tarjeta · {selMonthLabel.toLowerCase()}
+                </div>
+              </div>
+              <span
+                className="v2-badge"
+                style={{ background: "var(--red-soft)", color: "var(--red)" }}
+              >
+                {fmtARS(totalTarjetas)}
+              </span>
+            </div>
+            {tarjetasItems.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-3)",
+                  padding: "10px 0",
+                }}
+              >
+                Sin resúmenes pagados este mes.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {tarjetasItems.map((t) => {
+                  const pct = totalTarjetas > 0 ? (t.value / totalTarjetas) * 100 : 0;
+                  return (
+                    <div key={t.provider}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          marginBottom: 4,
+                          gap: 8,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {t.provider}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontVariantNumeric: "tabular-nums",
+                            fontWeight: 500,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {fmtARS(t.value)}
+                        </span>
+                      </div>
+                      <div className="v2-progress">
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            background: "#dc2626",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Bancos / Débitos */}
+          <div className="v2-card">
+            <div className="v2-card-header">
+              <div>
+                <div className="v2-card-title">Bancos / Débitos</div>
+                <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 2 }}>
+                  Débitos automáticos y movimientos · {selMonthLabel.toLowerCase()}
+                </div>
+              </div>
+              <span className="v2-badge">{fmtARS(totalBancos)}</span>
+            </div>
+            {bancosItems.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "var(--text-3)",
+                  padding: "10px 0",
+                }}
+              >
+                Sin débitos bancarios este mes.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {bancosItems.map((b) => {
+                  const pct = totalBancos > 0 ? (b.value / totalBancos) * 100 : 0;
+                  return (
+                    <div key={b.provider}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          marginBottom: 4,
+                          gap: 8,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {b.provider}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontVariantNumeric: "tabular-nums",
+                            fontWeight: 500,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {fmtARS(b.value)}
+                        </span>
+                      </div>
+                      <div className="v2-progress">
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            background: "#737373",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="v2-grid v2-grid-2">
