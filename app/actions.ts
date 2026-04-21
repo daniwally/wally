@@ -66,6 +66,12 @@ export async function ignoreExpense(formData: FormData) {
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 
+// Regla fija: todo lo que venga por MERPAGO* es marketplace.
+function isMerpago(merchantRaw: string | null | undefined): boolean {
+  if (!merchantRaw) return false;
+  const upper = merchantRaw.toUpperCase();
+  return upper.includes("MERPAGO*") || upper.includes("MERPAGO ");
+}
 
 function lastDayOfMonthISO(yyyymm: string): string {
   const [y, m] = yyyymm.split("-").map(Number);
