@@ -362,20 +362,28 @@ export async function deleteAllStatements() {
   revalidatePath("/analisis");
 }
 
-export async function addCustomMerchantType(formData: FormData): Promise<void> {
-  const slug = String(formData.get("slug") || "")
+function slugify(text: string): string {
+  return text
     .toLowerCase()
-    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove accents
     .replace(/[^a-z0-9_]/g, "_")
-    .replace(/_+/g, "_");
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "");
+}
+
+export async function addCustomMerchantType(formData: FormData): Promise<void> {
   const label = String(formData.get("label") || "").trim();
-  const icon = String(formData.get("icon") || "·").trim() || "·";
+  if (!label) return;
+
+  const slug = slugify(label);
+  if (!slug) return;
+
+  const icon = String(formData.get("icon") || "").trim() || "·";
   const description = String(formData.get("description") || "").trim() || null;
   const isEssentialRaw = String(formData.get("is_essential") || "");
   const is_essential =
     isEssentialRaw === "true" ? true : isEssentialRaw === "false" ? false : null;
-
-  if (!slug || !label) return;
 
   await supabase().from("custom_merchant_types").upsert(
     {
@@ -389,6 +397,33 @@ export async function addCustomMerchantType(formData: FormData): Promise<void> {
     { onConflict: "user_id,slug" },
   );
   revalidatePath("/analisis");
+}
+
+// Sugerir un emoji apropiado con Claude Haiku
+export async function suggestIconForLabel(label: string): Promise<string> {
+  if (!label || label.trim().length < 2) return "·";
+  const { anthropic } = await import("@/lib/anthropic");
+  try {
+    const response = await anthropic().messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 15,
+      messages: [
+        {
+          role: "user",
+          content: `Devolvé SOLO UN emoji apropiado para representar la categoría de gasto "${label}". Nada de texto, solo el emoji. Ejemplos: Libros→📚, Mantenimiento auto→🔩, Juguetes→🧸, Plantas→🌱, Farmacia→💊.`,
+        },
+      ],
+    });
+    const text = response.content
+      .filter((c) => c.type === "text")
+      .map((c) => (c.type === "text" ? c.text : ""))
+      .join("")
+      .trim();
+    // Retornar los primeros 2-4 chars (emoji puede ser multi-byte)
+    return text.slice(0, 4) || "·";
+  } catch {
+    return "·";
+  }
 }
 
 export async function deleteCustomMerchantType(formData: FormData): Promise<void> {

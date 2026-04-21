@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Icon } from "../Icon";
-import { addCustomMerchantType, deleteCustomMerchantType } from "@/app/actions";
+import {
+  addCustomMerchantType,
+  deleteCustomMerchantType,
+  suggestIconForLabel,
+} from "@/app/actions";
 
 type CustomType = {
   slug: string;
@@ -14,6 +18,17 @@ type CustomType = {
 
 export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] }) {
   const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [icon, setIcon] = useState("");
+  const [isSuggesting, startSuggest] = useTransition();
+
+  const suggest = () => {
+    if (!label.trim()) return;
+    startSuggest(async () => {
+      const emoji = await suggestIconForLabel(label);
+      setIcon(emoji);
+    });
+  };
 
   return (
     <div className="v2-card" style={{ marginTop: 16, padding: 0 }}>
@@ -65,24 +80,64 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
             }}
           >
             <form
-              action={addCustomMerchantType}
+              action={async (fd) => {
+                await addCustomMerchantType(fd);
+                setLabel("");
+                setIcon("");
+              }}
               style={{
                 display: "grid",
-                gridTemplateColumns: "auto 1fr 1.6fr auto auto",
+                gridTemplateColumns: "auto auto 1fr 1.6fr auto auto",
                 gap: 8,
                 alignItems: "center",
               }}
             >
               <input
                 name="icon"
-                placeholder="📚"
-                maxLength={3}
+                placeholder="·"
+                maxLength={4}
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
                 className="v2-input"
-                style={{ width: 50, textAlign: "center", fontSize: 16, padding: "5px 8px" }}
+                style={{
+                  width: 50,
+                  textAlign: "center",
+                  fontSize: 16,
+                  padding: "5px 8px",
+                }}
               />
+              <button
+                type="button"
+                onClick={suggest}
+                disabled={!label.trim() || isSuggesting}
+                className="v2-btn sm"
+                style={{
+                  padding: "5px 8px",
+                  opacity: !label.trim() || isSuggesting ? 0.5 : 1,
+                }}
+                title="Sugerir ícono con IA según el label"
+              >
+                {isSuggesting ? (
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      border: "2px solid currentColor",
+                      borderTopColor: "transparent",
+                      animation: "v2-spin 0.7s linear infinite",
+                    }}
+                  />
+                ) : (
+                  "✨"
+                )}
+              </button>
               <input
                 name="label"
                 placeholder="Libros"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
                 required
                 className="v2-input"
                 style={{ fontSize: 13, padding: "7px 10px" }}
@@ -103,23 +158,14 @@ export function CustomTypesManager({ customTypes }: { customTypes: CustomType[] 
                 <option value="true">Esencial</option>
                 <option value="false">Discrec.</option>
               </select>
-              <input type="hidden" name="slug" value="" />
-              <button
-                type="submit"
-                className="v2-btn sm primary"
-                onClick={(e) => {
-                  const form = e.currentTarget.closest("form")!;
-                  const label = (form.elements.namedItem("label") as HTMLInputElement).value;
-                  (form.elements.namedItem("slug") as HTMLInputElement).value = label;
-                }}
-              >
+              <button type="submit" className="v2-btn sm primary">
                 <Icon.plus /> Agregar
               </button>
             </form>
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
-              💡 Tip: el <strong>slug</strong> se genera automático desde el label
-              (&ldquo;Mantenimiento Auto&rdquo; → <code>mantenimiento_auto</code>). La descripción le
-              dice a Claude cuándo usar esta categoría.
+              💡 El <strong>slug</strong> se genera solo desde el label (&ldquo;Mantenimiento
+              Auto&rdquo; → <code>mantenimiento_auto</code>). Click en <strong>✨</strong> para
+              que Claude elija un emoji según el label.
             </div>
           </div>
 
