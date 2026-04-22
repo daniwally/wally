@@ -13,6 +13,7 @@ import { MerchantReclassifier } from "@/components/v2/MerchantReclassifier";
 import { CustomTypesManager } from "@/components/v2/CustomTypesManager";
 import { Collapsible } from "@/components/v2/Collapsible";
 import { RebuildButton } from "@/components/v2/RebuildButton";
+import { FullReport } from "@/components/v2/FullReport";
 
 export const dynamic = "force-dynamic";
 
@@ -559,6 +560,9 @@ export default async function AnalisisPage({
                 </div>
               </div>
             </div>
+
+            {/* Informe ejecutivo con IA — al final del análisis */}
+            <FullReport />
 
             {/* Cuotas en curso (minimizado por default) */}
             {cuotas.length > 0 && (

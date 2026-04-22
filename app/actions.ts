@@ -398,6 +398,231 @@ export async function addCustomMerchantType(formData: FormData): Promise<void> {
   revalidatePath("/analisis");
 }
 
+// Informe ejecutivo con Claude Sonnet 4.6: analiza TODOS los items + overrides + customs
+// y devuelve un reporte estilo Mint/YNAB/Personal Capital con recomendaciones accionables
+export async function generateFullReport(): Promise<{
+  report: string;
+  totalItems: number;
+  totalBatches: number;
+  error?: string;
+}> {
+  try {
+    const { data: items } = await supabase()
+      .from("statement_items")
+      .select(
+        "merchant, merchant_raw, amount_cents, currency, purchase_date, cuota_numero, cuota_total, merchant_type, is_essential, source_provider, source_period, upload_batch_id, category_id",
+      )
+      .eq("user_id", WALLY_USER_ID);
+
+    if (!items || items.length === 0) {
+      return { report: "", totalItems: 0, totalBatches: 0, error: "No hay consumos cargados." };
+    }
+
+    const itemsArs = items.filter((i) => i.currency === "ARS");
+    const itemsUsd = items.filter((i) => i.currency === "USD");
+    const totalArs = itemsArs.reduce((s, i) => s + i.amount_cents / 100, 0);
+    const totalUsd = itemsUsd.reduce((s, i) => s + i.amount_cents / 100, 0);
+
+    const batchIds = new Set(items.map((i) => i.upload_batch_id).filter(Boolean));
+    const batchesInfo = new Map<string, { provider: string; period: string | null; count: number; total: number }>();
+    items.forEach((it) => {
+      if (!it.upload_batch_id) return;
+      const existing = batchesInfo.get(it.upload_batch_id);
+      if (existing) {
+        existing.count++;
+        if (it.currency === "ARS") existing.total += it.amount_cents / 100;
+      } else {
+        batchesInfo.set(it.upload_batch_id, {
+          provider: it.source_provider ?? "—",
+          period: it.source_period,
+          count: 1,
+          total: it.currency === "ARS" ? it.amount_cents / 100 : 0,
+        });
+      }
+    });
+
+    // Top merchants
+    const merchantMap = new Map<
+      string,
+      { total: number; count: number; type: string | null; essential: boolean | null }
+    >();
+    itemsArs.forEach((it) => {
+      const existing = merchantMap.get(it.merchant);
+      if (existing) {
+        existing.total += it.amount_cents / 100;
+        existing.count++;
+      } else {
+        merchantMap.set(it.merchant, {
+          total: it.amount_cents / 100,
+          count: 1,
+          type: it.merchant_type,
+          essential: it.is_essential,
+        });
+      }
+    });
+    const topMerchants = Array.from(merchantMap.entries())
+      .map(([m, v]) => ({ merchant: m, ...v }))
+      .sort((a, b) => b.total - a.total);
+
+    // Por tipo
+    const typeMap = new Map<string, { total: number; count: number }>();
+    itemsArs.forEach((it) => {
+      const k = it.merchant_type ?? "otros";
+      const existing = typeMap.get(k);
+      if (existing) {
+        existing.total += it.amount_cents / 100;
+        existing.count++;
+      } else {
+        typeMap.set(k, { total: it.amount_cents / 100, count: 1 });
+      }
+    });
+    const typeBreakdown = Array.from(typeMap.entries())
+      .map(([t, v]) => ({ type: t, ...v, pct: (v.total / totalArs) * 100 }))
+      .sort((a, b) => b.total - a.total);
+
+    // Essential vs discretionary
+    const essentialTotal = itemsArs
+      .filter((i) => i.is_essential === true)
+      .reduce((s, i) => s + i.amount_cents / 100, 0);
+    const discretionaryTotal = itemsArs
+      .filter((i) => i.is_essential === false)
+      .reduce((s, i) => s + i.amount_cents / 100, 0);
+    const unclassifiedTotal = totalArs - essentialTotal - discretionaryTotal;
+
+    // Cuotas
+    const cuotas = itemsArs.filter(
+      (i) => i.cuota_numero && i.cuota_total && i.cuota_numero < i.cuota_total,
+    );
+    const cuotasPendientes = cuotas.reduce(
+      (s, c) => s + (c.amount_cents / 100) * (c.cuota_total! - c.cuota_numero!),
+      0,
+    );
+    const cuotasByMerchant = new Map<string, { monto: number; restantes: number; total: number }>();
+    cuotas.forEach((c) => {
+      const k = c.merchant;
+      const existing = cuotasByMerchant.get(k);
+      const restantes = c.cuota_total! - c.cuota_numero!;
+      if (!existing || c.cuota_numero! > 0) {
+        cuotasByMerchant.set(k, {
+          monto: c.amount_cents / 100,
+          restantes,
+          total: (c.amount_cents / 100) * restantes,
+        });
+      }
+    });
+
+    const prompt = `Sos un analista financiero senior especializado en finanzas personales argentinas. Tenés formación en metodologías como:
+- Regla 50/30/20 (50% necesidades, 30% deseos, 20% ahorro/inversión)
+- Zero-Based Budgeting (YNAB): cada peso tiene un destino
+- Rule of Thumb Mint.com: suscripciones no >5% del ingreso
+- Personal Capital: priorizar deudas de alto interés y FI (financial independence)
+
+Tu tarea: armar un **INFORME EJECUTIVO PROFESIONAL** basado en los datos reales de consumos de tarjeta de crédito del usuario. NO sos genérico — citás montos reales, merchants reales, categorías reales.
+
+Formato obligatorio (markdown con headers ##):
+
+## 📊 Resumen ejecutivo
+- 3-4 bullets con los hallazgos más importantes (con números).
+- Mención clara del mix esencial vs discrecional y qué dice sobre el perfil del usuario.
+
+## 💸 Comportamiento de gastos
+- Tipo de consumidor (basándote en patrones).
+- Las 3-5 categorías que concentran el gasto con % y montos.
+- Merchants recurrentes que generan dependencia (aparecen en múltiples resúmenes).
+
+## 🔔 Alertas
+- Gastos atípicos o de un solo uso con monto alto.
+- Concentración excesiva en una categoría (>20%).
+- Subscripciones que acumulan (stacking de streaming/SaaS).
+- Cuotas que comprometen flujo futuro.
+
+## 💡 Oportunidades de reducción
+- 3-5 recomendaciones MUY ESPECÍFICAS con montos.
+- Ejemplo del tono esperado: "Rappi te consumió \$180.000 en 15 pedidos. Bajar a 6 pedidos/mes ahorra \$108k. Alternativa: comprás en Coto \$85k más y comés casa 2 días/semana."
+- Ordenadas por impacto (\$) de mayor a menor.
+
+## 📈 Versus buenas prácticas
+- Comparación con la regla 50/30/20 usando los datos reales.
+- ¿Las suscripciones superan el 5% recomendado?
+- ¿Las cuotas comprometen >30% del flujo futuro?
+
+## ✅ Plan de acción (próximos 30 días)
+- 3 acciones concretas, medibles, con plazo.
+- Meta de reducción realista en \$.
+- Qué merchant/categoría atacar primero y por qué.
+
+TONO: profesional argentino, directo, sin jerga académica, accionable. Usá la forma "vos". Nunca genérico ("ahorrá más" ❌). Siempre específico con números. Emojis moderados.
+
+DATOS:
+
+Resúmenes analizados: ${batchesInfo.size}
+${Array.from(batchesInfo.values())
+  .map((b) => `- ${b.provider} ${b.period ? `(${b.period})` : ""}: ${b.count} items · \$${Math.round(b.total).toLocaleString("es-AR")}`)
+  .join("\n")}
+
+Total ARS: \$${Math.round(totalArs).toLocaleString("es-AR")}
+Total USD: US\$${totalUsd.toFixed(2)}
+Consumos: ${items.length}
+
+Mix:
+- Esencial: \$${Math.round(essentialTotal).toLocaleString("es-AR")} (${Math.round((essentialTotal / totalArs) * 100)}%)
+- Discrecional: \$${Math.round(discretionaryTotal).toLocaleString("es-AR")} (${Math.round((discretionaryTotal / totalArs) * 100)}%)
+- Sin clasificar: \$${Math.round(unclassifiedTotal).toLocaleString("es-AR")} (${Math.round((unclassifiedTotal / totalArs) * 100)}%)
+
+Top 20 merchants ARS:
+${topMerchants
+  .slice(0, 20)
+  .map(
+    (m) =>
+      `- ${m.merchant} (${m.type ?? "sin tipo"}, ${m.essential === true ? "esencial" : m.essential === false ? "discrec" : "?"}): \$${Math.round(m.total).toLocaleString("es-AR")} en ${m.count} items`,
+  )
+  .join("\n")}
+
+Por tipo de gasto (ARS):
+${typeBreakdown
+  .slice(0, 15)
+  .map(
+    (t) =>
+      `- ${t.type}: \$${Math.round(t.total).toLocaleString("es-AR")} (${t.pct.toFixed(1)}%) en ${t.count} items`,
+  )
+  .join("\n")}
+
+Cuotas activas: ${cuotas.length} items, pendiente total: \$${Math.round(cuotasPendientes).toLocaleString("es-AR")}
+${cuotas.length > 0 ? "Detalle (top 5 más grandes):" : ""}
+${Array.from(cuotasByMerchant.entries())
+  .sort((a, b) => b[1].total - a[1].total)
+  .slice(0, 5)
+  .map(([m, c]) => `- ${m}: \$${Math.round(c.monto).toLocaleString("es-AR")} x ${c.restantes} cuotas = \$${Math.round(c.total).toLocaleString("es-AR")}`)
+  .join("\n")}
+`;
+
+    const { anthropic } = await import("@/lib/anthropic");
+    const response = await anthropic().messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4000,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = response.content
+      .filter((c) => c.type === "text")
+      .map((c) => (c.type === "text" ? c.text : ""))
+      .join("\n");
+
+    return {
+      report: text || "No pude generar el informe.",
+      totalItems: items.length,
+      totalBatches: batchIds.size,
+    };
+  } catch (e) {
+    return {
+      report: "",
+      totalItems: 0,
+      totalBatches: 0,
+      error: e instanceof Error ? e.message : "error",
+    };
+  }
+}
+
 // Reclasifica todos los items existentes con las categorías actuales
 // (overrides + custom types + built-in). Útil después de agregar una custom type nueva
 // para aplicarla retroactivamente.
